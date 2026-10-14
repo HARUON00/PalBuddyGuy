@@ -576,6 +576,13 @@ class App:
             self.status_labels[key] = (dot, lbl)
         self.device_label = ttk.Label(bar, text="")
         self.device_label.pack(side="right")
+        self.status_bar = bar
+        # shown while no tracker data arrives; SRanipal only runs the cameras for a client app
+        self.no_data_hint = ttk.Label(self.root, text=t("no_data_hint"), foreground="#c05000", wraplength=840,
+                                      justify="left", padding=(8, 0, 8, 4))
+        self.no_data_hint.bind("<Configure>", lambda e: self.no_data_hint.configure(wraplength=max(200, e.width - 16)))
+        self.no_data_shown = False
+        self._rest_text = None
 
     def _build_live_tab(self):
         t = self.t
@@ -906,11 +913,6 @@ class App:
             side="left", padx=(4, 12))
         ttk.Label(opts, text=t("lr")).pack(side="left")
         ttk.Entry(opts, textvariable=self.lr, width=9).pack(side="left", padx=(4, 12))
-        self.wd = tk.StringVar(value=str(self.cfg.weight_decay))
-        ttk.Label(opts, text=t("weight_decay")).pack(side="left")
-        ttk.Entry(opts, textvariable=self.wd, width=6).pack(side="left", padx=(4, 0))
-        self.val_sessions = tk.BooleanVar(value=self.cfg.validation_sessions)
-        ttk.Checkbutton(opts, text=t("val_sessions"), variable=self.val_sessions).pack(side="left", padx=(12, 0))
         opts2 = ttk.Frame(tab)
         opts2.pack(fill="x", pady=(0, 6))
         ttk.Checkbutton(opts2, text=t("amp"), variable=self.amp).pack(side="left")
@@ -930,8 +932,17 @@ class App:
         ttk.Label(opts3, text=t("loss_fn")).pack(side="left", padx=(16, 4))
         ttk.Combobox(opts3, textvariable=self.loss_var, state="readonly", width=30,
                      values=list(self.loss_labels.values())).pack(side="left")
+        # against overfitting: own row so it fits the minimum window width
+        opts4 = ttk.Frame(tab)
+        opts4.pack(fill="x", pady=(0, 6))
+        ttk.Label(opts4, text=t("overfitting")).pack(side="left", padx=(0, 6))
+        self.val_sessions = tk.BooleanVar(value=self.cfg.validation_sessions)
+        ttk.Checkbutton(opts4, text=t("val_sessions"), variable=self.val_sessions).pack(side="left")
         self.augment = tk.BooleanVar(value=self.cfg.augment)
-        ttk.Checkbutton(opts3, text=t("augment"), variable=self.augment).pack(side="left", padx=(16, 0))
+        ttk.Checkbutton(opts4, text=t("augment"), variable=self.augment).pack(side="left", padx=12)
+        self.wd = tk.StringVar(value=str(self.cfg.weight_decay))
+        ttk.Label(opts4, text=t("weight_decay")).pack(side="left")
+        ttk.Entry(opts4, textvariable=self.wd, width=6).pack(side="left", padx=(4, 0))
 
         ctl = ttk.Frame(tab)
         ctl.pack(fill="x")
@@ -1314,15 +1325,23 @@ class App:
         s = self.engine.status()
         t = self.t
         mode = s["input_mode"]
+        receiving = False
         for key in ("eye", "face"):
             snap = s["streams"].get(key, {"state": "disconnected", "fps": 0})
             state = snap["state"]
+            receiving = receiving or (state == "ok" and mode in ("both", key))
             if mode not in ("both", key) and state != "ok":
                 state = "not_used"
             dot, lbl = self.status_labels[key]
             dot.itemconfigure("dot", fill=STATE_COLORS[state])
             lbl.configure(text="%s: %s%s" % (t(key), t(state),
                                              " (%.0f fps)" % snap["fps"] if state == "ok" else ""))
+        if receiving == self.no_data_shown:
+            self.no_data_shown = not receiving
+            if self.no_data_shown:
+                self.no_data_hint.pack(after=self.status_bar, fill="x")
+            else:
+                self.no_data_hint.pack_forget()
         hint = s.get("mode_hint")
         if hint != self.shown_hint:
             self.shown_hint = hint
@@ -1357,8 +1376,9 @@ class App:
         else:
             self.infer_btn.configure(text=t("start_infer"))
             self.infer_stats.configure(text=t("not_tracking"))
-        self.fastcal_label.configure(text=s["fastcal"] or t("fastcal_help"),
-                                     foreground="#c05000" if s["fastcal"] else "#666")
+        busy_text = s["fastcal"] or self._rest_text
+        self.fastcal_label.configure(text=busy_text or t("fastcal_help"),
+                                     foreground="#c05000" if busy_text else "#666")
         if s["inferring"]:
             self._update_bars()
             self._update_merged_values()
@@ -1508,12 +1528,12 @@ class App:
         self.rest_btn.state(["disabled"])
 
     def _ev_rest_progress(self, left):
-        self.fastcal_label.configure(text=self.t("rest_running") % left, foreground="#c05000")
+        self._rest_text = self.t("rest_running") % left  # shown by _refresh_status
 
     def _ev_rest_done(self, results, error):
         t = self.t
         self.rest_btn.state(["!disabled"])
-        self.fastcal_label.configure(text=t("fastcal_help"), foreground="#666")
+        self._rest_text = None
         if error:
             self._error(error)
             return

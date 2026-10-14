@@ -14,6 +14,12 @@ STRINGS = {
     "ok": ("connected", "연결됨"),
     "stalled": ("no data", "데이터 없음"),
     "disconnected": ("disconnected", "연결 안 됨"),
+    "no_data_hint": ("No tracker data. SRanipal only runs the cameras while an app uses it - its tray icons turn "
+                     "green then. Start VRCFaceTracking (recording and tracking need it running). If its icons are "
+                     "green and this stays, restart SRanipal.",
+                     "트래커 데이터가 없습니다. SRanipal은 앱이 사용할 때만 카메라를 켭니다 (그때 트레이 아이콘이 "
+                     "초록색이 됩니다). VRCFaceTracking을 실행하세요 (녹화와 트래킹에 필요합니다). 아이콘이 초록색인데도 "
+                     "이 문구가 계속 보이면 SRanipal을 다시 시작하세요."),
     "camera": ("Camera preview (eyes on top, face below)", "카메라 미리보기 (위: 눈, 아래: 얼굴)"),
     "swap": ("Swap eye/face", "눈/얼굴 뒤바꾸기"),
     "preview": ("Show preview", "미리보기 표시"),
@@ -86,7 +92,7 @@ STRINGS = {
                        "표정에만 쓰고, 말을 따라가야 하는 입 모양에는 끄세요."),
     "sens_high": ("High end", "상한"),
     "sens_auto": ("Auto (5 s)", "자동 (5초)"),
-    "rest_cal": ("Neutral calibration (5 s)", "무표정 보정 (5초)"),
+    "rest_cal": ("Neutral cal.", "무표정 보정"),
     "rest_running": ("Hold a neutral face (blinking and looking around is fine)... %.1f s",
                      "무표정을 유지하세요 (깜빡이거나 두리번거려도 됩니다)... %.1f초"),
     "rest_done": ("Each class's low end now sits just above its value on your neutral face:",
@@ -210,7 +216,8 @@ STRINGS = {
     "batch": ("Batch size", "배치 크기"),
     "lr": ("Learning rate", "학습률"),
     "weight_decay": ("Weight decay", "가중치 감쇠"),
-    "augment": ("Augment (vary position / lighting)", "증강 (위치·조명 변화)"),
+    "overfitting": ("Against overfitting:", "과적합 대책:"),
+    "augment": ("Augment (position / lighting)", "증강 (위치·조명 변화)"),
     "aug_short": ("augmented", "증강"),
     "compare_with_aug": ("Also train each picked model with augmentation (twice as many runs)",
                          "선택한 모델마다 증강 버전도 학습 (실행 횟수 2배)"),

@@ -23,7 +23,9 @@ On the first run the launcher:
 After that, double-clicking the .bat or the shortcut opens the GUI directly, without a console window. Startup errors (such as a port already in use) appear in a dialog, and everything is logged to `palbuddy.log`. To reinstall from scratch, delete the `.venv` folder and run the .bat again.
 
 # Running
-Start Pal Buddy Guy (double-click) **before** SRanipalRuntime.
+Start Pal Buddy Guy (double-click) **before** SRanipalRuntime, then **VRCFaceTracking**.
+
+SRanipal only runs the cameras (and with them the network Pal Buddy Guy reads from) while an app uses it; its tray icons turn green then. Pal Buddy Guy doesn't use the SRanipal API itself, so until VRCFaceTracking starts, the icons stay grey and no tracker data arrives - the app shows a hint meanwhile. Recording and tracking need VRCFaceTracking running; training doesn't.
 
 Manual / advanced use, with your own Python environment:
 
@@ -195,7 +197,7 @@ CLI: `merged add PBG_SmileSad smile,-sad -1 0 1 binary 4` (terms, min, neutral, 
 ## Sensitivity (Live tab)
 If a class only moves between, say, 0.2 and 0.8, stretch that part back to 0..1. Click the class in the output list, then drag **Low end** / **High end**; orange marks show them on the bar. **Auto (5 s)** measures it for you: make a neutral face, then the full expression, and the 5th–95th percentile of what it saw becomes the range. The top bar shows the value before the adjustment and the bottom bar what is sent. The adjustment applies to VRCFaceTracking shapes and OSC outputs alike. CLI: `sens smile 0.2 0.8`.
 
-**Neutral calibration (5 s)** (Live tab, next to FastCal): if expressions show while your face is at rest, hold a neutral face for 5 seconds (blinking and looking around is fine). Every class except neutral gets its low end set just above the value it showed (98th percentile + 0.03), so a resting face sends 0. Do it after putting the headset on. A class that rests at 0.3 or more is reported: the model mistakes your neutral face for it, and the low end only hides that - weak expressions of that class are hidden too. Fix those at the source by recording neutral again (now, and on another day), adding it to the neutral class and retraining, then calibrate again. CLI: `restcal`.
+**Neutral cal.** (Live tab, next to FastCal; takes 5 s): if expressions show while your face is at rest, hold a neutral face for 5 seconds (blinking and looking around is fine). Every class except neutral gets its low end set just above the value it showed (98th percentile + 0.03), so a resting face sends 0. Do it after putting the headset on. A class that rests at 0.3 or more is reported: the model mistakes your neutral face for it, and the low end only hides that - weak expressions of that class are hidden too. Fix those at the source by recording neutral again (now, and on another day), adding it to the neutral class and retraining, then calibrate again. CLI: `restcal`.
 
 ### Stability and talking
 When emotion classes flicker while you talk, two things help:
