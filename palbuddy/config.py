@@ -245,6 +245,12 @@ class Config:
     # blend half of the expression samples with neutral frames (and their targets) so the
     # model learns in-between intensities; see trainer.BatchSampler
     mixup: bool = True
+    # shift / scale / add noise to the training features (see trainer.augment_batch) so the
+    # model doesn't depend on one session's exact headset position and lighting
+    augment: bool = False
+    # AdamW weight decay; 0 = plain Adam (original). It is multiplied by the learning rate,
+    # so it has a noticeable effect mainly with the compact model's larger step
+    weight_decay: float = 0.0
     validation_split: float = 0.1  # end of each recording held out to measure accuracy; 0 = off
     # validate on a whole recording of each class that has several (its last file) instead of
     # recording ends: measures another session / headset fit, i.e. overfitting. Fewer training frames.
@@ -310,6 +316,8 @@ class Config:
             problems.append("model_arch must be one of %s." % ", ".join(MODEL_ARCHS))
         if self.loss not in LOSSES:
             problems.append("loss must be one of %s." % ", ".join(LOSSES))
+        if not 0 <= self.weight_decay <= 10:
+            problems.append("weight_decay must be between 0 and 10.")
         if not 0 <= self.validation_split < 0.5:
             problems.append("validation_split must be between 0 and 0.5.")
         if self.input_mode not in INPUT_MODES:

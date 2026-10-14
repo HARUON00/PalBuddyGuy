@@ -135,6 +135,11 @@ Training holds out the last 10 % of every recording (`validation_split` in `conf
 
 **Validate on another session** (Train tab, off by default, `validation_sessions`): for every class with two or more recordings, the class's *last* recording is held out whole instead, and its other recordings are trained on in full. Make that recording on another day or after taking the headset off and on, and the numbers show how the model copes with a new headset fit - which is where an overfitted model falls apart, and what the same-session numbers can't show. The best-epoch choice and *Compare models* then also pick by this. Classes with a single recording still use their recording's end, and training lists them. It costs training frames (one recording per such class), so turn it off again for the final training once you have picked a model and settings.
 
+**Against overfitting** (Train tab, both off by default; try them with *Validate on another session* on):
+* **Augment (vary position / lighting)** (`augment`): every training batch is shifted by up to one feature cell (about 5 camera pixels, like the headset sitting slightly differently), scaled by ±10 % (lighting) and given a little noise. The eye and face features get their own shift and scale, because the two cameras move independently. Validation frames are never augmented. It runs on the training device: nearly free on an NVIDIA GPU, ~15-40 % slower training on the CPU.
+* **Weight decay** (`weight_decay`, e.g. 0.05): AdamW instead of Adam (0 = the original Adam). The decay is multiplied by the learning rate, so it has a noticeable effect mainly with the compact model, whose step is 10x larger.
+* In *Compare models*, tick **Also train each picked model with augmentation** to get every model with and without it side by side; applying a row also sets the Augment option it was trained with.
+
 ### Measurements
 One 2.8 GHz Xeon core, frames arriving at 60 Hz, whole-process CPU as % of one core, memory measured while tracking:
 

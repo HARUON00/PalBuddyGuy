@@ -1523,5 +1523,77 @@ class SessionValidationTests(unittest.TestCase):
         self.assertTrue(any("No class has two recordings" in line for line in logs), logs[:4])
 
 
+class RegularizationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_shift_repeats_edges(self):
+        from palbuddy.trainer import _shift
+        a = torch.arange(16, dtype=torch.float32).reshape(1, 1, 4, 4)
+        down = _shift(a, 1, 0)[0, 0]
+        self.assertEqual(down[0].tolist(), a[0, 0, 0].tolist())  # top row repeated
+        self.assertEqual(down[1:].tolist(), a[0, 0, :3].tolist())
+        left = _shift(a, 0, -1)[0, 0]
+        self.assertEqual(left[:, :3].tolist(), a[0, 0, :, 1:].tolist())
+        self.assertEqual(left[:, 3].tolist(), a[0, 0, :, 3].tolist())  # right column repeated
+
+    def test_augment_batch(self):
+        from palbuddy import trainer as T
+        torch.manual_seed(0)
+        base = torch.randn(256, 128, 20, 20)
+        x = T.augment_batch(base.clone())
+        self.assertTrue(torch.isfinite(x).all())
+        self.assertFalse(torch.allclose(x, base))
+        # strength stays mild: per-sample spread changes by at most gain + noise
+        ratio = x.std(dim=(1, 2, 3)) / base.std(dim=(1, 2, 3))
+        self.assertTrue(((ratio > 0.85) & (ratio < 1.15)).all(), (ratio.min(), ratio.max()))
+        # eye and face halves get independent shifts: with zero gain/noise, find samples
+        # where exactly one half moved
+        old = T.AUG_GAIN, T.AUG_NOISE
+        T.AUG_GAIN, T.AUG_NOISE = 0.0, 0.0
+        self.addCleanup(lambda: (setattr(T, "AUG_GAIN", old[0]), setattr(T, "AUG_NOISE", old[1])))
+        x = T.augment_batch(base.clone())
+        eye_same = (x[:, :64] == base[:, :64]).flatten(1).all(dim=1)
+        face_same = (x[:, 64:] == base[:, 64:]).flatten(1).all(dim=1)
+        self.assertTrue((eye_same != face_same).any())
+        self.assertTrue(0.03 < eye_same.float().mean() < 0.25)  # 1 in 9 shifts is (0, 0)
+        # single-tracker batches (64 channels) work too
+        self.assertEqual(T.augment_batch(base[:, :64].clone()).shape, (256, 64, 20, 20))
+
+    def make_data(self):
+        rng = np.random.default_rng(0)
+        for name, offset in (("n", 0.0), ("s", 1.0)):
+            mm = np.memmap(os.path.join(self.tmp.name, name + ".mmap"), np.float32, "w+", shape=(32, 128, 20, 20))
+            mm[:] = rng.normal(offset, 0.1, size=mm.shape)
+            mm.flush()
+            del mm
+        return Config(dataset_folder=self.tmp.name, model_path=os.path.join(self.tmp.name, "m.pt"),
+                      epochs=1, batch_size=16, mixed_precision=False, model_arch="compact", loss="bce",
+                      classes=[ExpressionClass("neutral", ["n.mmap"]),
+                               ExpressionClass("smile", ["s.mmap"], "JawOpen")])
+
+    def test_training_with_augmentation_and_weight_decay(self):
+        cfg = self.make_data()
+        cfg.augment, cfg.weight_decay = True, 0.1
+        logs = []
+        model, history = train(cfg, log_fn=logs.append, device=torch.device("cpu"), seed=0)
+        self.assertEqual(len(history), 1)
+        self.assertTrue(any("augmentation, weight decay 0.1" in line for line in logs), logs[:3])
+        cfg.weight_decay = -1
+        self.assertTrue(any("weight_decay" in p for p in cfg.validate()))
+
+    def test_compare_with_and_without_augmentation(self):
+        from palbuddy.trainer import compare
+        cfg = self.make_data()
+        results = compare(cfg, [("compact", "bce", False), ("compact", "bce", True), ("lite", "mse")],
+                          log_fn=lambda *a: None, device=torch.device("cpu"))
+        self.assertEqual([r["augment"] for r in results], [False, True, False])  # 2-tuples use cfg.augment
+        engine = Engine(self.make_data())
+        engine.apply_candidate(results[1])
+        self.assertTrue(engine.cfg.augment)
+        self.assertEqual((engine.cfg.model_arch, engine.cfg.loss), ("compact", "bce"))
+
+
 if __name__ == "__main__":
     unittest.main()

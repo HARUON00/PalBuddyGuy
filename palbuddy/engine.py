@@ -566,8 +566,9 @@ class Engine:
                 self.compare_results = results
                 ok = True
                 r = results[best]
-                message = "Compared %d models. Recommended: %s + %s (score %.1f, %.2f ms)" % (
-                    len(results), r["arch"], r["loss"].upper(), r["metrics"]["val_score"], r["ms"])
+                message = "Compared %d models. Recommended: %s + %s%s (score %.1f, %.2f ms)" % (
+                    len(results), r["arch"], r["loss"].upper(), " + augmentation" if r.get("augment") else "",
+                    r["metrics"]["val_score"], r["ms"])
             except trainer.TrainingCancelled:
                 message = "Comparison cancelled"
             except Exception as e:
@@ -628,9 +629,11 @@ class Engine:
         self.model = result["model"].eval()
         self.model.val_metrics = result["metrics"]
         self.cfg.model_arch, self.cfg.loss = result["arch"], result["loss"]
+        self.cfg.augment = result.get("augment", self.cfg.augment)
         self.save_model(path)
         self.save_config()
-        log.info("Now using the %s + %s model", result["arch"], result["loss"].upper())
+        log.info("Now using the %s + %s model%s", result["arch"], result["loss"].upper(),
+                 " (trained with augmentation)" if self.cfg.augment else "")
         if was_inferring:
             self.start_inference()
 

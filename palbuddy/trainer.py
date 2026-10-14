@@ -101,6 +101,49 @@ class BatchSampler:
         return x, t
 
 
+# Augmentation: what changes between sessions, applied to training batches only.
+# It runs in torch on the training device (after the batch is copied there), where it
+# is nearly free on a GPU; in numpy on the loader threads it cost more than the gather.
+AUG_SHIFT = 1  # feature cells (~5 camera pixels): the headset sitting slightly differently
+AUG_GAIN = 0.1  # +-10 % feature strength: lighting / exposure
+AUG_NOISE = 0.05  # gaussian noise, relative to each sample's spread
+
+
+def _shift(a, dy, dx):
+    """Shift (n, c, H, W) maps by dy, dx cells, repeating the edge row/column."""
+    out = torch.roll(a, shifts=(dy, dx), dims=(2, 3))
+    if dy > 0:
+        out[:, :, :dy] = out[:, :, dy:dy + 1]
+    elif dy < 0:
+        out[:, :, dy:] = out[:, :, dy - 1:dy]
+    if dx > 0:
+        out[:, :, :, :dx] = out[:, :, :, dx:dx + 1]
+    elif dx < 0:
+        out[:, :, :, dx:] = out[:, :, :, dx - 1:dx]
+    return out
+
+
+@torch.no_grad()
+def augment_batch(x):
+    """In place on a (B, C, 20, 20) float tensor. Each tracker's 64 channels get
+    their own shift and gain, since the eye and face cameras move independently."""
+    b, dev = x.shape[0], x.device
+    for lo in range(0, x.shape[1], 64):
+        block = x[:, lo:lo + 64]
+        shifts = torch.randint(-AUG_SHIFT, AUG_SHIFT + 1, (b, 2)).tolist()
+        groups = {}
+        for i, (dy, dx) in enumerate(shifts):
+            if dy or dx:
+                groups.setdefault((dy, dx), []).append(i)
+        for (dy, dx), rows in groups.items():
+            idx = torch.tensor(rows, device=dev)
+            block[idx] = _shift(block[idx], dy, dx)
+        block *= torch.empty((b, 1, 1, 1), device=dev).uniform_(1 - AUG_GAIN, 1 + AUG_GAIN)
+    spread = x.std(dim=(1, 2, 3), keepdim=True)
+    x += torch.randn_like(x) * (AUG_NOISE * spread)
+    return x
+
+
 def check_recording(rec, channels, path):
     """Refuse recordings that have no data for a tracker the model needs, e.g.
     training "both" on a recording made with only the facial tracker."""
@@ -324,15 +367,16 @@ class Data:
 
 
 def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None, device=None,
-          data=None, arch=None, loss=None, seed=None):
+          data=None, arch=None, loss=None, seed=None, augment=None):
     """Train a model on the configured classes and return it (on `device`).
-    arch / loss default to cfg.model_arch / cfg.loss; data (a Data) can be shared
-    between runs so they see the same frames."""
+    arch / loss / augment default to cfg.model_arch / cfg.loss / cfg.augment; data
+    (a Data) can be shared between runs so they see the same frames."""
     device = device or pick_device()
     stop_event = stop_event or threading.Event()
     on_progress = on_progress or (lambda **kw: None)
     arch = arch or cfg.model_arch
     loss_name = loss or cfg.loss
+    augment = cfg.augment if augment is None else augment
     if loss_name not in LOSSES:
         raise ValueError("loss must be one of %s" % ", ".join(LOSSES))
 
@@ -354,9 +398,13 @@ def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None,
     model.to(device).train()
     if device.type == "cuda":
         torch.backends.cudnn.benchmark = True
-    log_fn("Training a %s model with %s loss" % (model.arch, loss_name.upper()))
+    log_fn("Training a %s model with %s loss%s%s" % (
+        model.arch, loss_name.upper(), ", augmentation" if augment else "",
+        ", weight decay %g" % cfg.weight_decay if cfg.weight_decay else ""))
 
-    opt = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate * ARCH_LR_SCALE.get(model.arch, 1.0))
+    # AdamW with weight_decay 0 is exactly Adam (the original optimiser)
+    opt = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate * ARCH_LR_SCALE.get(model.arch, 1.0),
+                            weight_decay=cfg.weight_decay)
     use_amp = cfg.mixed_precision and device.type == "cuda"
     if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
         scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
@@ -415,6 +463,8 @@ def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None,
                     raise item
                 x = item[0].to(device, non_blocking=True)
                 y = item[1].to(device, non_blocking=True)
+                if augment:
+                    augment_batch(x)
                 opt.zero_grad(set_to_none=True)
                 with (torch.autocast(device_type="cuda") if use_amp else contextlib.nullcontext()):
                     pred = model(x, logits=True)
@@ -467,15 +517,17 @@ def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None,
     return model, history
 
 
-# candidates the comparison trains by default: (arch, loss)
+# candidates the comparison trains by default: (arch, loss). A candidate can also be
+# (arch, loss, augment) to override cfg.augment for it.
 DEFAULT_CANDIDATES = (("standard", "mse"), ("lite", "mse"), ("standard", "bce"), ("compact", "bce"),
                       ("compact", "mse"))
 
 
 def compare(cfg, candidates=DEFAULT_CANDIDATES, on_progress=None, stop_event=None, log_fn=print, device=None,
             seed=1234):
-    """Train every (arch, loss) candidate on the same frames with the same sampling
-    seed and return [{"arch", "loss", "model", "metrics", "history"}] in candidate order."""
+    """Train every (arch, loss[, augment]) candidate on the same frames with the same
+    sampling seed and return [{"arch", "loss", "augment", "model", "metrics", "history"}]
+    in candidate order."""
     if cfg.validation_split <= 0:
         raise ValueError("Comparing models needs held-out frames: set the validation split above 0")
     on_progress = on_progress or (lambda **kw: None)
@@ -483,13 +535,15 @@ def compare(cfg, candidates=DEFAULT_CANDIDATES, on_progress=None, stop_event=Non
     if data.val_x is None:
         raise ValueError("The recordings are too short to hold out frames for comparing models")
     results = []
-    for i, (arch, loss_name) in enumerate(candidates):
-        log_fn("Comparing %d/%d: %s + %s" % (i + 1, len(candidates), arch, loss_name.upper()))
+    for i, (arch, loss_name, *rest) in enumerate(candidates):
+        augment = rest[0] if rest else cfg.augment
+        log_fn("Comparing %d/%d: %s + %s%s" % (i + 1, len(candidates), arch, loss_name.upper(),
+                                              " + augmentation" if augment else ""))
         progress = (lambda k: lambda **info: on_progress(candidate=k, candidates=len(candidates), **info))(i)
         model, history = train(cfg, on_progress=progress, stop_event=stop_event, log_fn=log_fn, device=device,
-                               data=data, arch=arch, loss=loss_name, seed=seed)
-        results.append({"arch": arch, "loss": loss_name, "model": model.cpu(), "history": history,
-                        "metrics": model.val_metrics})
+                               data=data, arch=arch, loss=loss_name, seed=seed, augment=augment)
+        results.append({"arch": arch, "loss": loss_name, "augment": augment, "model": model.cpu(),
+                        "history": history, "metrics": model.val_metrics})
     return results
 
 

@@ -391,6 +391,9 @@ class CompareDialog(tk.Toplevel):
             self.picks.append((arch, loss, var))
             ttk.Checkbutton(pick, text="%s + %s" % (app.arch_labels[arch], app.loss_labels[loss]),
                             variable=var).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, 16))
+        self.with_aug = tk.BooleanVar(value=False)
+        ttk.Checkbutton(pick, text=t("compare_with_aug"), variable=self.with_aug).grid(
+            row=(len(DEFAULT_CANDIDATES) + 1) // 2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         ttk.Label(frm, text=t("compare_epochs") % app.cfg.epochs, foreground="#666").pack(anchor="w")
 
         ctl = ttk.Frame(frm)
@@ -434,7 +437,11 @@ class CompareDialog(tk.Toplevel):
         self.destroy()
 
     def start(self):
-        candidates = [(a, l) for a, l, var in self.picks if var.get()]
+        picked = [(a, l) for a, l, var in self.picks if var.get()]
+        if self.with_aug.get():  # every picked model once without and once with augmentation
+            candidates = [(a, l, aug) for a, l in picked for aug in (False, True)]
+        else:
+            candidates = [(a, l, self.app.cfg.augment) for a, l in picked]
         app = self.app
         try:
             app.engine.compare_async(
@@ -450,6 +457,10 @@ class CompareDialog(tk.Toplevel):
         self.verdict.configure(text="")
         self.bar["value"] = 0
         self.status.configure(text=app.t("compare_running"))
+
+    def label(self, r):
+        name = self.app.arch_labels[r["arch"]]
+        return name + " · " + self.app.t("aug_short") if r.get("augment") else name
 
     def progress(self, info):
         k, n = info["candidate"], info["candidates"]
@@ -473,8 +484,9 @@ class CompareDialog(tk.Toplevel):
         self.tree.delete(*self.tree.get_children())
         for i, r in enumerate(results):
             m = r["metrics"]
-            current = r["arch"] == self.app.cfg.model_arch and r["loss"] == self.app.cfg.loss
-            name = ("★ " if i == best else "") + self.app.arch_labels[r["arch"]]
+            current = (r["arch"] == self.app.cfg.model_arch and r["loss"] == self.app.cfg.loss
+                       and bool(r.get("augment")) == self.app.cfg.augment)
+            name = ("★ " if i == best else "") + self.label(r)
             self.tree.insert("", "end", iid=str(i), text=name, tags=("best",) if i == best else (), values=(
                 r["loss"].upper(), "%.1f" % m["val_score"], "%.1f%%" % (m["val_acc"] * 100),
                 "%.1f%%" % (m["val_hit"] * 100), "%.1f%%" % (m["val_false"] * 100), "%.2f" % m.get("val_err", 0),
@@ -487,7 +499,7 @@ class CompareDialog(tk.Toplevel):
             self.tree.see(str(best))
             r = results[best]
             self.verdict.configure(text=t("compare_verdict") % (
-                self.app.arch_labels[r["arch"]], r["loss"].upper(), r["metrics"]["val_score"], r["ms"]))
+                self.label(r), r["loss"].upper(), r["metrics"]["val_score"], r["ms"]))
             self.apply_btn.state(["!disabled"])
 
     def apply(self):
@@ -503,8 +515,8 @@ class CompareDialog(tk.Toplevel):
             return
         app.show_model_choice()
         app._rebuild_bars()
-        app.train_status.configure(text=app.t("compare_applied") % (app.arch_labels[r["arch"]], r["loss"].upper()))
-        self.verdict.configure(text=app.t("compare_applied") % (app.arch_labels[r["arch"]], r["loss"].upper()))
+        app.train_status.configure(text=app.t("compare_applied") % (self.label(r), r["loss"].upper()))
+        self.verdict.configure(text=app.t("compare_applied") % (self.label(r), r["loss"].upper()))
         self.done(True, "", self.results, self.best)
 
 
@@ -892,6 +904,9 @@ class App:
             side="left", padx=(4, 12))
         ttk.Label(opts, text=t("lr")).pack(side="left")
         ttk.Entry(opts, textvariable=self.lr, width=9).pack(side="left", padx=(4, 12))
+        self.wd = tk.StringVar(value=str(self.cfg.weight_decay))
+        ttk.Label(opts, text=t("weight_decay")).pack(side="left")
+        ttk.Entry(opts, textvariable=self.wd, width=6).pack(side="left", padx=(4, 0))
         self.val_sessions = tk.BooleanVar(value=self.cfg.validation_sessions)
         ttk.Checkbutton(opts, text=t("val_sessions"), variable=self.val_sessions).pack(side="left", padx=(12, 0))
         opts2 = ttk.Frame(tab)
@@ -913,6 +928,8 @@ class App:
         ttk.Label(opts3, text=t("loss_fn")).pack(side="left", padx=(16, 4))
         ttk.Combobox(opts3, textvariable=self.loss_var, state="readonly", width=30,
                      values=list(self.loss_labels.values())).pack(side="left")
+        self.augment = tk.BooleanVar(value=self.cfg.augment)
+        ttk.Checkbutton(opts3, text=t("augment"), variable=self.augment).pack(side="left", padx=(16, 0))
 
         ctl = ttk.Frame(tab)
         ctl.pack(fill="x")
@@ -1591,6 +1608,8 @@ class App:
         self.cfg.epochs = int(self.epochs.get())
         self.cfg.batch_size = int(self.batch.get())
         self.cfg.learning_rate = float(self.lr.get())
+        self.cfg.weight_decay = float(self.wd.get())
+        self.cfg.augment = bool(self.augment.get())
         self.cfg.mixed_precision = bool(self.amp.get())
         self.cfg.cache_datasets_in_ram = bool(self.cache.get())
         self.cfg.mixup = bool(self.mixup.get())
@@ -1602,6 +1621,7 @@ class App:
         """Put the current config's model/loss back into the training tab's boxes."""
         self.arch_var.set(self.arch_labels[self.cfg.model_arch])
         self.loss_var.set(self.loss_labels[self.cfg.loss])
+        self.augment.set(self.cfg.augment)
 
     def on_compare(self):
         try:
