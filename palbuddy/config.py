@@ -227,6 +227,8 @@ class Config:
     # Recording
     record_frames: int = 2048
     record_countdown: float = 5.0
+    # store new recordings as float16 (half the disk space); older float32 ones still load
+    record_float16: bool = True
 
     # Training
     epochs: int = 20

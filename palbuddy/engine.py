@@ -472,7 +472,8 @@ class Engine:
                 on_done(ok, message, filename)
 
         self._recorder = Recorder(self.hub, path, frames or self.cfg.record_frames, self.cfg.record_countdown,
-                                  on_progress, done, guided=guided, on_guide=on_guide).start()
+                                  on_progress, done, guided=guided, on_guide=on_guide,
+                                  float16=self.cfg.record_float16).start()
         return filename
 
     def cancel_record(self):
@@ -480,7 +481,7 @@ class Engine:
             self._recorder.cancel()
 
     def convert_pickles(self):
-        return convert_legacy_pickles(self.cfg.dataset_folder)
+        return convert_legacy_pickles(self.cfg.dataset_folder, float16=self.cfg.record_float16)
 
     # ------------------------------------------------------------ training
     def train_async(self, on_progress=None, on_done=None, resume=False):

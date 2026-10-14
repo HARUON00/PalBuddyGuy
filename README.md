@@ -61,7 +61,7 @@ The **Input** box on the Live tab selects which trackers feed the network:
 Enter a name and click **Record**. After the countdown, 2048 frames are captured (about 30 s) and written directly to `<dataset folder>/<name>-em.mmap`.
 * You *must* also record a **neutral** set. It doesn't have to be a truly neutral face. It should cover any faces you **don't** want to track: talking, looking around, blinking. That way the network learns what *not* to fire on.
 * While recording, keep the target expression dominant but move around a bit (adjust the headset, turn your head). The goal is diverse data where the target expression is the one constant.
-* Each recording is about 400 MB, so point the dataset folder (Settings tab) at a drive with space.
+* Each recording is about 200 MB (float16; recordings made before this change are ~400 MB float32 and still load), so point the dataset folder (Settings tab) at a drive with space. Set `"record_float16": false` in `config.json` to record in float32 again.
 * Old `.pkl` recordings can be converted with **Convert old .pkl**.
 
 ## 3. Configure classes and train (Train tab)
@@ -232,7 +232,7 @@ If you want the receiver in its own process, run `python tvm_proxy.py` and set t
 2. **`PalBuddyGuy.bat`을 더블클릭합니다.** 처음 실행할 때는 Python(없으면 winget으로 설치할지 묻습니다), PyTorch(NVIDIA GPU가 있으면 CUDA 버전)와 나머지 패키지를 `.venv` 폴더에 자동으로 설치하고, 바탕화면 바로가기를 만들지 묻습니다. 다운로드가 약 2~3GB라 몇 분 걸립니다. 그다음부터는 더블클릭하면 콘솔 창 없이 바로 GUI가 뜹니다. 다시 설치하려면 `.venv` 폴더를 지우고 다시 실행하세요.
 3. **SRanipalRuntime보다 먼저** 실행해야 합니다. 이제 `tvm_proxy.py`는 따로 실행할 필요가 없습니다.
 4. **실시간** 탭: *입력 방식*을 고릅니다. **눈+입 / 입만(페이셜 트래커) / 눈만(Pro Eye)** 중 하나입니다. 트래커가 하나만 연결되어 있으면 미리보기를 보고 *입만* 또는 *눈만*을 누르면 됩니다. 두 트래커를 모두 쓸 때는 위에 눈, 아래에 얼굴이 보이는지 확인하고, 반대로 보이면 *눈/얼굴 뒤바꾸기*를 누르세요. 입력 방식을 바꾸면 다시 학습해야 합니다. 눈+입으로 녹화한 파일은 입만/눈만 학습에도 그대로 쓸 수 있습니다.
-5. **녹화** 탭: 이름을 입력하고 녹화합니다 (약 30초, 파일 하나에 약 400MB). `neutral`(무표정) 녹화는 반드시 있어야 합니다.
+5. **녹화** 탭: 이름을 입력하고 녹화합니다 (약 30초, 파일 하나에 약 200MB). `neutral`(무표정) 녹화는 반드시 있어야 합니다.
 6. **학습** 탭: 클래스별로 녹화 파일과 대상 파라미터를 지정합니다 (첫 번째 클래스는 neutral). *학습 시작*을 누르고, 손실이 0.001 아래로 내려가면 *모델 저장*을 누릅니다.
 7. **실시간** 탭: *트래킹 시작*을 누른 뒤 *빠른 보정(FastCal)*으로 아바타를 따라 하며 보정합니다.
 

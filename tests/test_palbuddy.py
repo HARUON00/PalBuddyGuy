@@ -1392,5 +1392,79 @@ class IntensityLearningTests(unittest.TestCase):
         self.assertGreater(v, 0.85)
 
 
+class Float16RecordingTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def record(self, name, float16, frames=20):
+        hub = FrameHub()
+        path = os.path.join(self.tmp.name, name)
+        done, result = threading.Event(), {}
+        Recorder(hub, path, frames, countdown=0, float16=float16,
+                 on_done=lambda ok, m: (result.update(ok=ok, m=m), done.set())).start()
+        time.sleep(0.2)
+        for i in range(frames + 10):
+            hub.push(neural(i * 0.25), neural(1e6 if i == 5 else -i * 0.25))
+        self.assertTrue(done.wait(5))
+        self.assertTrue(result["ok"], result["m"])
+        return path
+
+    def test_float16_is_half_size_and_reads_back(self):
+        from palbuddy.datasets import F16_MAGIC, HEADER_SIZE, SAMPLE_BYTES, recording_layout
+        p16 = self.record("h-em.mmap", True)
+        p32 = self.record("f-em.mmap", False)
+        self.assertEqual(os.path.getsize(p32), 20 * SAMPLE_BYTES)  # legacy layout, no header
+        self.assertEqual(os.path.getsize(p16), HEADER_SIZE + 20 * SAMPLE_BYTES // 2)
+        with open(p16, "rb") as f:
+            self.assertEqual(f.read(len(F16_MAGIC)), F16_MAGIC)
+        self.assertEqual(recording_layout(p16)[0], np.float16)
+        self.assertEqual(recording_layout(p32)[0], np.float32)
+        for p in (p16, p32):
+            self.assertEqual(frame_count(p), 20)
+            rec = open_recording(p)
+            self.assertEqual(float(rec[3, 0, 0, 0]), 0.75)
+            self.assertEqual(float(rec[3, 64, 0, 0]), -0.75)
+        # values outside the float16 range are clipped, never stored as inf
+        self.assertTrue(np.isfinite(open_recording(p16)[5]).all())
+        self.assertEqual(open_recording(p16, in_ram=True).dtype, np.float16)  # RAM cache halves too
+
+    def test_training_mixes_float16_and_legacy_recordings(self):
+        from palbuddy.datasets import create_recording
+        from palbuddy.trainer import BatchSampler, load_recordings, split_recordings
+        rng = np.random.default_rng(0)
+        for name, offset, f16 in (("n", 0.0, True), ("s", 1.0, False)):
+            mm = create_recording(os.path.join(self.tmp.name, name + ".mmap"), 32, f16)
+            mm[:] = rng.normal(offset, 0.1, size=mm.shape)
+            mm.flush()
+            del mm
+        cfg = Config(dataset_folder=self.tmp.name, model_path=os.path.join(self.tmp.name, "m.pt"),
+                     epochs=2, batch_size=16, mixed_precision=False, validation_split=0.2,
+                     classes=[ExpressionClass("neutral", ["n.mmap"]), ExpressionClass("smile", ["s.mmap"], "JawOpen")])
+        recs, labels, _ = load_recordings(cfg, log_fn=lambda *a: None)
+        self.assertEqual(recs[0][0].dtype, np.float16)
+        _, _, val_x, _ = split_recordings(recs, 0.2, slice(0, 128), labels)
+        self.assertEqual(val_x.dtype, np.float32)  # the model never sees float16 input
+        x, t = BatchSampler(recs, 64, seed=0).sample()
+        self.assertEqual(x.dtype, np.float32)
+        for c, mean in ((0, 0.0), (1, 1.0)):  # each class's frames keep their values
+            self.assertAlmostEqual(float(x[t[:, c] == 1].mean()), mean, delta=0.05)
+        model, history = train(cfg, log_fn=lambda *a: None, device=torch.device("cpu"), seed=0)
+        self.assertEqual(len(history), 2)
+        self.assertIn("val_acc", model.val_metrics)
+
+    def test_legacy_pickles_convert_to_float16(self):
+        import pickle
+        from palbuddy.datasets import convert_legacy_pickles, recording_layout
+        block = [(np.full((64, 20, 20), i, np.float32), np.full((64, 20, 20), -i, np.float32)) for i in range(4)]
+        with open(os.path.join(self.tmp.name, "old-em.pkl"), "wb") as f:
+            pickle.dump(block, f)
+        out = convert_legacy_pickles(self.tmp.name)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(recording_layout(out[0])[0], np.float16)
+        rec = open_recording(out[0])
+        self.assertEqual((len(rec), float(rec[2, 0, 0, 0]), float(rec[2, 100, 0, 0])), (4, 2.0, -2.0))
+
+
 if __name__ == "__main__":
     unittest.main()

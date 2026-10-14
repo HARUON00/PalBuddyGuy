@@ -138,7 +138,7 @@ def split_recordings(recordings, fraction, channels, labels=None):
             kept.append(rec[:n_train])
             kept_labels.append(None if lab is None else lab[:n_train])
             idx = np.linspace(n_train, len(rec) - 1, num=min(VAL_FRAMES_PER_FILE, len(rec) - n_train)).astype(int)
-            xs.append(np.ascontiguousarray(rec[idx, channels]))
+            xs.append(np.ascontiguousarray(rec[idx, channels], dtype=np.float32))
             ts.append(targets_for(c, None if lab is None else lab[idx], num_classes) if lab is not None
                       else np.repeat(targets_for(c, None, num_classes), len(idx), axis=0))
         train.append(kept)
