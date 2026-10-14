@@ -444,6 +444,9 @@ class CompareDialog(tk.Toplevel):
         self.with_aug = tk.BooleanVar(value=False)
         ttk.Checkbutton(pick, text=t("compare_with_aug"), variable=self.with_aug).grid(
             row=(len(DEFAULT_CANDIDATES) + 1) // 2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.with_distill = tk.BooleanVar(value=False)
+        ttk.Checkbutton(pick, text=t("compare_with_distill"), variable=self.with_distill).grid(
+            row=(len(DEFAULT_CANDIDATES) + 3) // 2, column=0, columnspan=2, sticky="w")
         ttk.Label(frm, text=t("compare_epochs") % app.cfg.epochs, foreground="#666").pack(anchor="w")
 
         ctl = ttk.Frame(frm)
@@ -488,10 +491,12 @@ class CompareDialog(tk.Toplevel):
 
     def start(self):
         picked = [(a, l) for a, l, var in self.picks if var.get()]
-        if self.with_aug.get():  # every picked model once without and once with augmentation
-            candidates = [(a, l, aug) for a, l in picked for aug in (False, True)]
-        else:
-            candidates = [(a, l, self.app.cfg.augment) for a, l in picked]
+        augs = (False, True) if self.with_aug.get() else (self.app.cfg.augment,)
+        # every picked model once without and once with augmentation (if asked)
+        candidates = [(a, l, aug, False) for a, l in picked for aug in augs]
+        if self.with_distill.get():
+            # last, so the standard + BCE runs above can serve as teachers
+            candidates += [("compact", "bce", aug, True) for aug in augs]
         app = self.app
         try:
             app.engine.compare_async(
@@ -510,7 +515,11 @@ class CompareDialog(tk.Toplevel):
 
     def label(self, r):
         name = self.app.arch_labels[r["arch"]]
-        return name + " · " + self.app.t("aug_short") if r.get("augment") else name
+        if r.get("distill"):
+            name += " · " + self.app.t("distill_short")
+        if r.get("augment"):
+            name += " · " + self.app.t("aug_short")
+        return name
 
     def progress(self, info):
         k, n = info["candidate"], info["candidates"]
@@ -535,7 +544,8 @@ class CompareDialog(tk.Toplevel):
         for i, r in enumerate(results):
             m = r["metrics"]
             current = (r["arch"] == self.app.cfg.model_arch and r["loss"] == self.app.cfg.loss
-                       and bool(r.get("augment")) == self.app.cfg.augment)
+                       and bool(r.get("augment")) == self.app.cfg.augment
+                       and bool(r.get("distill")) == self.app.cfg.distill)
             name = ("★ " if i == best else "") + self.label(r)
             self.tree.insert("", "end", iid=str(i), text=name, tags=("best",) if i == best else (), values=(
                 r["loss"].upper(), "%.1f" % m["val_score"], "%.1f%%" % (m["val_acc"] * 100),
@@ -618,6 +628,11 @@ class App:
         bar = ttk.Frame(self.root, padding=(8, 6))
         bar.pack(fill="x")
         self.status_labels = {}
+        # packed first: when the window is narrow Tk shrinks the widgets packed last, and the
+        # mode switch must stay reachable (the device label can lose a few letters instead)
+        self.advanced_var = tk.BooleanVar(value=self.cfg.ui_advanced)
+        ttk.Checkbutton(bar, text=t("advanced_mode"), variable=self.advanced_var,
+                        command=self.on_ui_mode).pack(side="right")
         for key in ("eye", "face", "vrcft"):
             f = ttk.Frame(bar)
             f.pack(side="left", padx=(0, 18))
@@ -628,10 +643,7 @@ class App:
             lbl.pack(side="left")
             self.status_labels[key] = (dot, lbl)
         self.device_label = ttk.Label(bar, text="")
-        self.device_label.pack(side="right")
-        self.advanced_var = tk.BooleanVar(value=self.cfg.ui_advanced)
-        ttk.Checkbutton(bar, text=t("advanced_mode"), variable=self.advanced_var,
-                        command=self.on_ui_mode).pack(side="right", padx=(0, 16))
+        self.device_label.pack(side="right", padx=(0, 16))
         self.status_bar = bar
         # shown while no tracker data arrives; SRanipal only runs the cameras for a client app
         self.no_data_hint = ttk.Label(self.root, text=t("no_data_hint"), foreground="#c05000", wraplength=840,
@@ -1021,13 +1033,15 @@ class App:
         self.arch_labels = {a: t("arch_" + a) for a in MODEL_ARCHS}
         self.arch_var = tk.StringVar(value=self.arch_labels.get(self.cfg.model_arch, self.arch_labels["standard"]))
         ttk.Label(opts3, text=t("arch")).pack(side="left", padx=(0, 4))
-        ttk.Combobox(opts3, textvariable=self.arch_var, state="readonly", width=26,
+        ttk.Combobox(opts3, textvariable=self.arch_var, state="readonly", width=22,
                      values=list(self.arch_labels.values())).pack(side="left")
         self.loss_labels = {k: t("loss_" + k) for k in LOSSES}
         self.loss_var = tk.StringVar(value=self.loss_labels.get(self.cfg.loss, self.loss_labels["mse"]))
         ttk.Label(opts3, text=t("loss_fn")).pack(side="left", padx=(16, 4))
-        ttk.Combobox(opts3, textvariable=self.loss_var, state="readonly", width=30,
+        ttk.Combobox(opts3, textvariable=self.loss_var, state="readonly", width=24,
                      values=list(self.loss_labels.values())).pack(side="left")
+        self.distill = tk.BooleanVar(value=self.cfg.distill)
+        ttk.Checkbutton(opts3, text=t("distill"), variable=self.distill).pack(side="left", padx=(12, 0))
         # against overfitting: own row so it fits the minimum window width
         opts4 = ttk.Frame(tab)
         opts4.pack(fill="x", pady=(0, 6))
@@ -1771,6 +1785,7 @@ class App:
         self.cfg.learning_rate = float(self.lr.get())
         self.cfg.weight_decay = float(self.wd.get())
         self.cfg.augment = bool(self.augment.get())
+        self.cfg.distill = bool(self.distill.get())
         self.cfg.mixed_precision = bool(self.amp.get())
         self.cfg.cache_datasets_in_ram = bool(self.cache.get())
         self.cfg.mixup = bool(self.mixup.get())
@@ -1783,6 +1798,7 @@ class App:
         self.arch_var.set(self.arch_labels[self.cfg.model_arch])
         self.loss_var.set(self.loss_labels[self.cfg.loss])
         self.augment.set(self.cfg.augment)
+        self.distill.set(self.cfg.distill)
 
     def on_compare(self):
         try:

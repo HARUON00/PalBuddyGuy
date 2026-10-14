@@ -366,11 +366,19 @@ class Data:
         return self._stats
 
 
+# Distillation: a small student learns from a larger teacher's outputs as well as the
+# labels. The teacher's outputs are soft ("70 % smile, 20 % open") where the labels are
+# 0/1, which carries more information per frame and helps a small model most.
+DISTILL_TEACHER = "standard"
+DISTILL_WEIGHT = 0.7  # share of the target that comes from the teacher; the rest from the labels
+
+
 def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None, device=None,
-          data=None, arch=None, loss=None, seed=None, augment=None):
+          data=None, arch=None, loss=None, seed=None, augment=None, teacher=None):
     """Train a model on the configured classes and return it (on `device`).
     arch / loss / augment default to cfg.model_arch / cfg.loss / cfg.augment; data
-    (a Data) can be shared between runs so they see the same frames."""
+    (a Data) can be shared between runs so they see the same frames. With a teacher
+    (a trained BuddyNet), the targets are blended with its outputs (see DISTILL_WEIGHT)."""
     device = device or pick_device()
     stop_event = stop_event or threading.Event()
     on_progress = on_progress or (lambda **kw: None)
@@ -382,6 +390,8 @@ def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None,
 
     data = data or Data(cfg, log_fn)
     recordings, val_x, val_t, channels = data.recordings, data.val_x, data.val_t, data.channels
+    if seed is not None:
+        torch.manual_seed(seed)  # before the model is built: its initial weights are random too
     if init_model is not None:
         model = init_model
         if model.output != OUTPUT_FOR_LOSS[loss_name]:
@@ -395,6 +405,12 @@ def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None,
         raise ValueError("Model output count does not match the class list")
     if model.input_mode != cfg.input_mode:
         raise ValueError("Model input mode '%s' does not match '%s'" % (model.input_mode, cfg.input_mode))
+    if teacher is not None:
+        if teacher.input_mode != cfg.input_mode or teacher.num_outputs != cfg.num_classes:
+            raise ValueError("The teacher model doesn't match the input mode / class list")
+        teacher = teacher.to(device).eval()
+        log_fn("Distilling from a %s teacher (%.0f %% of each target from its outputs)"
+               % (teacher.describe(), DISTILL_WEIGHT * 100))
     model.to(device).train()
     if device.type == "cuda":
         torch.backends.cudnn.benchmark = True
@@ -417,12 +433,13 @@ def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None,
     steps = max(1, (2048 * cfg.num_classes) // cfg.batch_size)
     # one sampler (and RNG) per loader thread: numpy Generators aren't thread safe
     seeds = np.random.SeedSequence(seed).spawn(2)
-    if seed is not None:
-        torch.manual_seed(seed)
-    q = queue.Queue(maxsize=6)
+    # one queue per loader, read in turn: the batch order then doesn't depend on which
+    # thread happens to finish first, so a seeded run (e.g. every Compare candidate)
+    # really sees the same batches
+    queues = [queue.Queue(maxsize=3) for _ in range(2)]
     producer_stop = threading.Event()
 
-    def put(item):
+    def put(q, item):
         while not producer_stop.is_set():
             try:
                 q.put(item, timeout=0.2)
@@ -430,7 +447,7 @@ def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None,
             except queue.Full:
                 pass
 
-    def producer(seed):
+    def producer(seed, q):
         pin = device.type == "cuda"
         sampler = BatchSampler(recordings, cfg.batch_size, seed=seed, channels=channels, labels=data.labels,
                                mixup=MIXUP_FRACTION if cfg.mixup else 0.0)
@@ -440,31 +457,40 @@ def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None,
                 x, y = torch.from_numpy(x), torch.from_numpy(y)
                 if pin:
                     x, y = x.pin_memory(), y.pin_memory()
-                put((x, y))
+                put(q, (x, y))
         except Exception as e:  # surface loader errors in the training thread
-            put(e)
+            put(q, e)
 
-    workers = [threading.Thread(target=producer, args=(seeds[i],), daemon=True, name="batch-loader-%d" % i)
-               for i in range(2)]
+    workers = [threading.Thread(target=producer, args=(seeds[i], queues[i]), daemon=True,
+                                name="batch-loader-%d" % i) for i in range(2)]
     for w in workers:
         w.start()
 
     history = []
     best = None  # (score, epoch, weights): the epoch that did best on the held-out frames is kept
     start = time.monotonic()
+    taken = 0
     try:
         for epoch in range(cfg.epochs):
             running = 0.0
             for step in range(steps):
                 if stop_event.is_set():
                     raise TrainingCancelled()
-                item = q.get()
+                item = queues[taken % 2].get()
+                taken += 1
                 if isinstance(item, Exception):
                     raise item
                 x = item[0].to(device, non_blocking=True)
                 y = item[1].to(device, non_blocking=True)
                 if augment:
                     augment_batch(x)
+                if teacher is not None:
+                    with torch.no_grad(), (torch.autocast(device_type="cuda") if use_amp
+                                           else contextlib.nullcontext()):
+                        soft = teacher(x).float().clamp_(0.0, 1.0)  # relu or sigmoid outputs, as 0..1
+                    # BCE is linear in its target, so this is exactly
+                    # (1 - w) * loss(labels) + w * loss(teacher); for MSE it has the same minimum
+                    y = y * (1.0 - DISTILL_WEIGHT) + soft * DISTILL_WEIGHT
                 opt.zero_grad(set_to_none=True)
                 with (torch.autocast(device_type="cuda") if use_amp else contextlib.nullcontext()):
                     pred = model(x, logits=True)
@@ -517,17 +543,44 @@ def train(cfg, on_progress=None, stop_event=None, log_fn=print, init_model=None,
     return model, history
 
 
+def distill(cfg, on_progress=None, stop_event=None, log_fn=print, device=None, data=None, arch=None,
+            loss=None, seed=None, augment=None, teacher=None, init_model=None):
+    """Train a standard teacher (unless one is given), then the student (cfg.model_arch or
+    `arch`) with it. Both see the same frames. Returns (student, history); the student
+    carries the teacher's validation metrics as .teacher_metrics."""
+    device = device or pick_device()
+    data = data or Data(cfg, log_fn)
+    arch = arch or cfg.model_arch
+    if arch == DISTILL_TEACHER:
+        log_fn("Distillation needs a smaller model than the %s teacher; training normally" % DISTILL_TEACHER)
+        return train(cfg, on_progress, stop_event, log_fn, init_model, device, data, arch, loss, seed, augment)
+    if teacher is None:
+        log_fn("Distillation 1/2: training the %s teacher" % DISTILL_TEACHER)
+        teacher, _ = train(cfg, on_progress, stop_event, log_fn, None, device, data, DISTILL_TEACHER, loss, seed,
+                           augment)
+        log_fn("Distillation 2/2: training the %s student" % arch)
+    student, history = train(cfg, on_progress, stop_event, log_fn, init_model, device, data, arch, loss, seed,
+                             augment, teacher=teacher)
+    student.teacher_metrics = getattr(teacher, "val_metrics", None)
+    if student.teacher_metrics and getattr(student, "val_metrics", None):
+        log_fn("Teacher score %.1f, student score %.1f" % (student.teacher_metrics["val_score"],
+                                                           student.val_metrics["val_score"]))
+    return student, history
+
+
 # candidates the comparison trains by default: (arch, loss). A candidate can also be
-# (arch, loss, augment) to override cfg.augment for it.
+# (arch, loss, augment) to override cfg.augment for it, or (arch, loss, augment, True)
+# to distill it from a standard teacher (one trained earlier in the same comparison with
+# the same loss and augmentation is reused; otherwise one is trained first).
 DEFAULT_CANDIDATES = (("standard", "mse"), ("lite", "mse"), ("standard", "bce"), ("compact", "bce"),
                       ("compact", "mse"))
 
 
 def compare(cfg, candidates=DEFAULT_CANDIDATES, on_progress=None, stop_event=None, log_fn=print, device=None,
             seed=1234):
-    """Train every (arch, loss[, augment]) candidate on the same frames with the same
-    sampling seed and return [{"arch", "loss", "augment", "model", "metrics", "history"}]
-    in candidate order."""
+    """Train every (arch, loss[, augment[, distill]]) candidate on the same frames with the
+    same sampling seed and return [{"arch", "loss", "augment", "distill", "model", "metrics",
+    "history"}] in candidate order."""
     if cfg.validation_split <= 0:
         raise ValueError("Comparing models needs held-out frames: set the validation split above 0")
     on_progress = on_progress or (lambda **kw: None)
@@ -535,15 +588,29 @@ def compare(cfg, candidates=DEFAULT_CANDIDATES, on_progress=None, stop_event=Non
     if data.val_x is None:
         raise ValueError("The recordings are too short to hold out frames for comparing models")
     results = []
+    teachers = {}  # (loss, augment) -> a standard model trained in this comparison
     for i, (arch, loss_name, *rest) in enumerate(candidates):
         augment = rest[0] if rest else cfg.augment
-        log_fn("Comparing %d/%d: %s + %s%s" % (i + 1, len(candidates), arch, loss_name.upper(),
-                                              " + augmentation" if augment else ""))
+        distilled = bool(rest[1]) if len(rest) > 1 else False
+        log_fn("Comparing %d/%d: %s + %s%s%s" % (i + 1, len(candidates), arch, loss_name.upper(),
+                                                " + augmentation" if augment else "",
+                                                " (distilled)" if distilled else ""))
         progress = (lambda k: lambda **info: on_progress(candidate=k, candidates=len(candidates), **info))(i)
-        model, history = train(cfg, on_progress=progress, stop_event=stop_event, log_fn=log_fn, device=device,
-                               data=data, arch=arch, loss=loss_name, seed=seed, augment=augment)
-        results.append({"arch": arch, "loss": loss_name, "augment": augment, "model": model.cpu(),
-                        "history": history, "metrics": model.val_metrics})
+        common = dict(on_progress=progress, stop_event=stop_event, log_fn=log_fn, device=device, data=data,
+                      arch=arch, loss=loss_name, seed=seed, augment=augment)
+        if distilled:
+            teacher = teachers.get((loss_name, augment))
+            if teacher is not None:
+                teacher = teacher.to(device)
+            model, history = distill(cfg, teacher=teacher, **common)
+            if teacher is not None:
+                teacher.cpu()
+        else:
+            model, history = train(cfg, **common)
+        if arch == DISTILL_TEACHER and not distilled:
+            teachers[(loss_name, augment)] = model
+        results.append({"arch": arch, "loss": loss_name, "augment": augment, "distill": distilled,
+                        "model": model.cpu(), "history": history, "metrics": model.val_metrics})
     return results
 
 

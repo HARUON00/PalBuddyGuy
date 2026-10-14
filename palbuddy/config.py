@@ -251,6 +251,9 @@ class Config:
     # AdamW weight decay; 0 = plain Adam (original). It is multiplied by the learning rate,
     # so it has a noticeable effect mainly with the compact model's larger step
     weight_decay: float = 0.0
+    # lite / compact: train a standard teacher first and let the smaller model learn from its
+    # outputs as well as the labels (about twice the training time); see trainer.distill
+    distill: bool = False
     validation_split: float = 0.1  # end of each recording held out to measure accuracy; 0 = off
     # validate on a whole recording of each class that has several (its last file) instead of
     # recording ends: measures another session / headset fit, i.e. overfitting. Fewer training frames.

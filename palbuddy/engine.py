@@ -514,8 +514,9 @@ class Engine:
                     if init.output != trainer.OUTPUT_FOR_LOSS[self.cfg.loss]:
                         raise ValueError("The current model was trained with the other loss; untick 'continue' "
                                          "to train a new one")
-                model, history = trainer.train(self.cfg, on_progress=on_progress, stop_event=self._train_stop,
-                                               log_fn=log.info, init_model=init, device=self.device)
+                fit = trainer.distill if self.cfg.distill else trainer.train
+                model, history = fit(self.cfg, on_progress=on_progress, stop_event=self._train_stop,
+                                     log_fn=log.info, init_model=init, device=self.device)
                 self.model = model
                 self.model_dirty = True
                 ok, message = True, "Training finished (final loss %.6f). Don't forget to save." % history[-1]
@@ -571,9 +572,9 @@ class Engine:
                 self.compare_results = results
                 ok = True
                 r = results[best]
-                message = "Compared %d models. Recommended: %s + %s%s (score %.1f, %.2f ms)" % (
+                message = "Compared %d models. Recommended: %s + %s%s%s (score %.1f, %.2f ms)" % (
                     len(results), r["arch"], r["loss"].upper(), " + augmentation" if r.get("augment") else "",
-                    r["metrics"]["val_score"], r["ms"])
+                    " (distilled)" if r.get("distill") else "", r["metrics"]["val_score"], r["ms"])
             except trainer.TrainingCancelled:
                 message = "Comparison cancelled"
             except Exception as e:
@@ -635,10 +636,12 @@ class Engine:
         self.model.val_metrics = result["metrics"]
         self.cfg.model_arch, self.cfg.loss = result["arch"], result["loss"]
         self.cfg.augment = result.get("augment", self.cfg.augment)
+        self.cfg.distill = result.get("distill", self.cfg.distill)
         self.save_model(path)
         self.save_config()
-        log.info("Now using the %s + %s model%s", result["arch"], result["loss"].upper(),
-                 " (trained with augmentation)" if self.cfg.augment else "")
+        log.info("Now using the %s + %s model%s%s", result["arch"], result["loss"].upper(),
+                 " (trained with augmentation)" if self.cfg.augment else "",
+                 " (distilled)" if self.cfg.distill else "")
         if was_inferring:
             self.start_inference()
 

@@ -1595,6 +1595,112 @@ class RegularizationTests(unittest.TestCase):
         self.assertEqual((engine.cfg.model_arch, engine.cfg.loss), ("compact", "bce"))
 
 
+class DeterminismTests(unittest.TestCase):
+    def test_seeded_training_is_reproducible_whatever_the_thread_timing(self):
+        """Compare relies on this: every candidate must see the same batches."""
+        import random as pyrandom
+        from palbuddy import trainer as T
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        make_recordings(tmp.name, {"n": 0.0, "s": 1.0}, frames=32)
+        cfg = Config(dataset_folder=tmp.name, epochs=1, batch_size=64, mixed_precision=False, model_arch="compact",
+                     classes=[ExpressionClass("neutral", ["n.mmap"]), ExpressionClass("smile", ["s.mmap"], "JawOpen")])
+        real = T.BatchSampler.sample
+        jitter = pyrandom.Random()  # unseeded on purpose: scrambles which loader finishes first
+
+        def slow_sample(sampler):
+            time.sleep(jitter.random() * 0.01)
+            return real(sampler)
+        T.BatchSampler.sample = slow_sample
+        self.addCleanup(setattr, T.BatchSampler, "sample", real)
+        runs = [train(cfg, log_fn=lambda *a: None, device=torch.device("cpu"), seed=7)[0].state_dict()
+                for _ in range(2)]
+        for name in runs[0]:
+            self.assertTrue(torch.equal(runs[0][name], runs[1][name]), name)
+
+
+class DistillationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        rng = np.random.default_rng(0)
+        for name, offset in (("n", 0.0), ("s", 1.0)):
+            mm = np.memmap(os.path.join(self.tmp.name, name + ".mmap"), np.float32, "w+", shape=(32, 128, 20, 20))
+            mm[:] = rng.normal(offset, 0.1, size=mm.shape)
+            mm.flush()
+            del mm
+        self.cfg = Config(dataset_folder=self.tmp.name, model_path=os.path.join(self.tmp.name, "m.pt"),
+                          epochs=1, batch_size=16, mixed_precision=False, model_arch="compact", loss="bce",
+                          mixup=False, classes=[ExpressionClass("neutral", ["n.mmap"]),
+                                                ExpressionClass("smile", ["s.mmap"], "JawOpen")])
+
+    def test_student_follows_the_teacher(self):
+        from palbuddy import trainer as T
+        # a teacher that says 50/50 for every frame, whatever the labels are
+        teacher = BuddyNet(2, "both", "compact", "sigmoid")
+        with torch.no_grad():
+            teacher.linear2.weight.zero_()
+            teacher.linear2.bias.zero_()
+        old = T.DISTILL_WEIGHT
+        T.DISTILL_WEIGHT = 1.0
+        self.addCleanup(setattr, T, "DISTILL_WEIGHT", old)
+        self.cfg.epochs = 4
+        logs = []
+        student, _ = T.train(self.cfg, log_fn=logs.append, device=torch.device("cpu"), seed=0, teacher=teacher)
+        self.assertTrue(any("Distilling from a compact/sigmoid teacher" in line for line in logs), logs[:3])
+        x = torch.from_numpy(np.array(open_recording(os.path.join(self.tmp.name, "s.mmap"))[:8]))
+        with torch.no_grad():
+            out = student.eval()(x)
+        # labels alone would push smile frames to (0, 1); the teacher pulls them to 0.5
+        self.assertTrue(((out - 0.5).abs() < 0.2).all(), out)
+
+    def test_distill_trains_a_teacher_then_the_student(self):
+        from palbuddy.trainer import distill
+        logs = []
+        student, history = distill(self.cfg, log_fn=logs.append, device=torch.device("cpu"), seed=0)
+        self.assertEqual((student.arch, len(history)), ("compact", 1))
+        self.assertTrue(any("1/2: training the standard teacher" in line for line in logs))
+        self.assertTrue(any("Teacher score" in line for line in logs))
+        self.assertIn("val_score", student.teacher_metrics)
+        # a standard model can't be distilled into itself: plain training
+        self.cfg.model_arch = "standard"
+        logs.clear()
+        model, _ = distill(self.cfg, log_fn=logs.append, device=torch.device("cpu"), seed=0)
+        self.assertEqual(model.arch, "standard")
+        self.assertTrue(any("training normally" in line for line in logs))
+
+    def test_compare_reuses_the_standard_run_as_teacher(self):
+        from palbuddy.trainer import compare
+        logs = []
+        results = compare(self.cfg, [("standard", "bce", False, False), ("compact", "bce", False, True)],
+                          log_fn=logs.append, device=torch.device("cpu"))
+        self.assertEqual([r["distill"] for r in results], [False, True])
+        self.assertFalse(any("training the standard teacher" in line for line in logs))  # reused, not retrained
+        self.assertTrue(any("Distilling from a standard" in line for line in logs))
+        engine = Engine(self.cfg)
+        engine.apply_candidate(results[1])
+        self.assertTrue(engine.cfg.distill)
+        engine.apply_candidate(results[0])
+        self.assertFalse(engine.cfg.distill)
+
+    def test_engine_trains_with_distillation_when_enabled(self):
+        from palbuddy import trainer as T
+        calls = []
+        real = T.distill
+        T.distill = lambda cfg, **kw: (calls.append(cfg.model_arch), real(cfg, **kw))[1]
+        self.addCleanup(setattr, T, "distill", real)
+        self.cfg.distill = True
+        engine = Engine(self.cfg)
+        engine.device = torch.device("cpu")
+        done = threading.Event()
+        out = {}
+        engine.train_async(on_done=lambda ok, m, h: (out.update(ok=ok, m=m), done.set()))
+        self.assertTrue(done.wait(120))
+        self.assertTrue(out["ok"], out["m"])
+        self.assertEqual(calls, ["compact"])
+        self.assertEqual(engine.model.arch, "compact")
+
+
 class RestCalibrationTests(unittest.TestCase):
     def test_low_ends_go_above_the_neutral_face(self):
         tmp = tempfile.TemporaryDirectory()

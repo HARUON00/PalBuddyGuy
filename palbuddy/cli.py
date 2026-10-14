@@ -228,9 +228,10 @@ def run_cli(engine):
                 if outcome["ok"]:
                     for i, r in enumerate(outcome["r"]):
                         m = r["metrics"]
-                        print("%s %d) %-8s %-3s %-3s score %5.1f  accuracy %5.1f%%  recognised %5.1f%%  false %5.1f%%  "
+                        print("%s %d) %-8s %-3s %-6s score %5.1f  accuracy %5.1f%%  recognised %5.1f%%  false %5.1f%%  "
                               "%.2f ms  %.1f MB" % ("*" if i == outcome["b"] else " ", i + 1, r["arch"],
-                                                    r["loss"].upper(), "aug" if r.get("augment") else "",
+                                                    r["loss"].upper(),
+                                                    ("aug" if r.get("augment") else "") + ("+kd" if r.get("distill") else ""),
                                                     m["val_score"], m["val_acc"] * 100,
                                                     m["val_hit"] * 100, m["val_false"] * 100, r["ms"], r["size_mb"]))
                     pick = input("apply which? [%d, Enter = recommended, n = none]: " % (outcome["b"] + 1)).strip()

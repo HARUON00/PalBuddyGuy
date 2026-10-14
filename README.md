@@ -144,6 +144,8 @@ Training holds out the last 10 % of every recording (`validation_split` in `conf
 * **Weight decay** (`weight_decay`, e.g. 0.05): AdamW instead of Adam (0 = the original Adam). The decay is multiplied by the learning rate, so it has a noticeable effect mainly with the compact model, whose step is 10x larger.
 * In *Compare models*, tick **Also train each picked model with augmentation** to get every model with and without it side by side; applying a row also sets the Augment option it was trained with.
 
+**Distill** (Train tab, next to the training method, off by default): the lite and compact models are 5-14x cheaper to run than standard (0.32 ms vs 4.5 ms per frame measured for compact), but a small model may track less accurately. With Distill on, training first trains a standard *teacher*, then the smaller model learns from 30 % the recording labels and 70 % the teacher's outputs. Those outputs are soft ("70 % smile, 20 % open"), which teaches a small model more per frame than 0/1 labels. Training takes about twice as long; tracking costs only the small model. Has no effect with the standard model. In *Compare models*, **Also train a distilled compact + BCE model** adds it as a candidate and reuses the comparison's standard + BCE run as its teacher, so you can see on your data whether it closes the gap. Whether it helps depends on the recordings.
+
 ### Measurements
 One 2.8 GHz Xeon core, frames arriving at 60 Hz, whole-process CPU as % of one core, memory measured while tracking:
 
