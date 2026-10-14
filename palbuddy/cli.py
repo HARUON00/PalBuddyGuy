@@ -21,6 +21,7 @@ HELP = """commands:
   save / load        save / load the model
   infer              start sending tracking to VRCFT (enter 'stop' to end)
   fastcal            calibrate max power by puppeting the avatar
+  restcal            hold a neutral face for 5 s: each class's low end goes just above it
   stop               stop inference / training / recording
   arch [standard|lite|compact]  model used for the next training
   loss [mse|bce]        training method for the next training
@@ -260,6 +261,18 @@ def run_cli(engine):
                 print("tracking started, 'stop' to end")
             elif cmd == "fastcal":
                 engine.request_fastcal()
+            elif cmd == "restcal":
+                done_event.clear()
+                outcome = {}
+                print("hold a neutral face for 5 s...")
+                engine.calibrate_rest(on_done=lambda r, e: (outcome.update(r=r, e=e), done_event.set()))
+                done_event.wait()
+                if outcome["e"]:
+                    print(outcome["e"])
+                for r in outcome["r"]:
+                    print("%-14s neutral %.2f -> low end %.2f%s" % (
+                        r["name"], r["rest"], r["in_min"],
+                        "   <- model mistakes neutral for this: record neutral again and retrain" if r["high"] else ""))
             elif cmd == "stop":
                 engine.stop_inference()
                 engine.cancel_training()

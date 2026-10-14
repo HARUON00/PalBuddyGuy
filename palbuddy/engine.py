@@ -101,6 +101,11 @@ def smoothing_cutoff(smoothing):
     return 0.3 + 10.0 * (1.0 - smoothing) ** 2
 
 
+# rest calibration: each class's low end goes just above what it shows on a neutral face
+REST_SECONDS = 5.0
+REST_PERCENTILE = 98  # ignores the odd outlier frame; smoothing/stability handle those
+REST_MARGIN = 0.03
+REST_WARN = 0.3  # resting this high means the model mistakes the neutral face for the class
 STABILITY_WINDOW = 0.4  # s: median window at stability 1 (a syllable is ~0.1-0.25 s)
 STABILITY_TAU = 0.3  # s: low-pass time constant at stability 1
 
@@ -685,6 +690,66 @@ class Engine:
         if not self.inferring:
             self.start_inference()
         self._fastcal_request.set()
+
+    def calibrate_rest(self, seconds=REST_SECONDS, on_progress=None, on_done=None):
+        """Measure every class's output while the user holds a neutral face and raise its
+        low end (in_min) just above it, so a resting face sends 0. The first (neutral)
+        class is left alone. on_done(results, error) with results
+        [{"index", "name", "rest", "in_min", "high", "blocked"}]; "high" marks classes
+        that rest at REST_WARN or more (the model confuses the neutral face with them),
+        "blocked" ones whose new low end reaches the high end."""
+        if not self.inferring:
+            raise RuntimeError("Start tracking first")
+        if self.busy:
+            raise RuntimeError("Wait until %s has finished" % self.busy)
+        self.busy = "calibrating"
+        self.request_full_rate(seconds + 0.5)
+
+        def run():
+            results, error = [], None
+            try:
+                samples, last, end = {}, None, time.monotonic() + seconds
+                while time.monotonic() < end and self.inferring:
+                    cur = self.last_class_raw  # replaced (not mutated) every frame
+                    if cur is not last and cur:
+                        last = cur
+                        for idx, v in cur.items():
+                            samples.setdefault(idx, []).append(v)
+                    if on_progress:
+                        on_progress(max(0.0, end - time.monotonic()))
+                    time.sleep(0.01)
+                if not self.inferring:
+                    raise RuntimeError("Tracking stopped during the calibration")
+                if len(samples.get(0, ())) < 10:
+                    raise RuntimeError("Too few frames arrived - is SRanipal sending data?")
+                for idx, values in sorted(samples.items()):
+                    if idx == 0 or idx >= len(self.cfg.classes):
+                        continue
+                    c = self.cfg.classes[idx]
+                    ordered = sorted(values)
+                    rest = ordered[min(len(ordered) - 1, int(len(ordered) * REST_PERCENTILE / 100))]
+                    lo = round(min(1.0, rest + REST_MARGIN), 2)
+                    blocked = lo > c.in_max - 0.05
+                    c.in_min = round(max(0.0, min(lo, c.in_max - 0.05)), 2)
+                    results.append({"index": idx, "name": c.name, "rest": rest, "in_min": c.in_min,
+                                    "high": rest >= REST_WARN, "blocked": blocked})
+                self.save_config()
+                log.info("Rest calibration: %s", ", ".join(
+                    "%s rests at %.2f -> low end %.2f" % (r["name"], r["rest"], r["in_min"]) for r in results))
+                for r in results:
+                    if r["high"]:
+                        log.warning("'%s' is at %.2f on a neutral face: the model mistakes your neutral face for "
+                                    "it. Record neutral again now (and on another day) and retrain.",
+                                    r["name"], r["rest"])
+            except Exception as e:
+                log.warning("Rest calibration failed: %s", e)
+                error = str(e)
+            finally:
+                self.busy = None
+            if on_done:
+                on_done(results, error)
+
+        threading.Thread(target=run, daemon=True, name="rest-calibration").start()
 
     def restart_inference(self):
         """Apply changed performance settings to a running tracker."""

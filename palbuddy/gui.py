@@ -619,6 +619,8 @@ class App:
         self.infer_btn = ttk.Button(ctl, text=t("start_infer"), command=self.on_toggle_infer)
         self.infer_btn.pack(side="left")
         ttk.Button(ctl, text=t("fastcal"), command=self.on_fastcal).pack(side="left", padx=6)
+        self.rest_btn = ttk.Button(ctl, text=t("rest_cal"), command=self.on_rest_calibration)
+        self.rest_btn.pack(side="left")
         ttk.Label(ctl, text=t("smoothing")).pack(side="left", padx=(16, 4))
         self.smoothing = tk.DoubleVar(value=self.cfg.smoothing)
         ttk.Scale(ctl, from_=0.0, to=0.9, variable=self.smoothing, length=140,
@@ -1495,6 +1497,37 @@ class App:
             self.engine.request_fastcal()
         except Exception as e:
             self._error(e)
+
+    def on_rest_calibration(self):
+        try:
+            self.engine.calibrate_rest(on_progress=lambda left: self.events.put(("rest_progress", left)),
+                                       on_done=lambda results, err: self.events.put(("rest_done", results, err)))
+        except Exception as e:
+            self._error(e)
+            return
+        self.rest_btn.state(["disabled"])
+
+    def _ev_rest_progress(self, left):
+        self.fastcal_label.configure(text=self.t("rest_running") % left, foreground="#c05000")
+
+    def _ev_rest_done(self, results, error):
+        t = self.t
+        self.rest_btn.state(["!disabled"])
+        self.fastcal_label.configure(text=t("fastcal_help"), foreground="#666")
+        if error:
+            self._error(error)
+            return
+        self._select_sensitivity(self.sens_class)  # show the new low end of the selected class
+        lines = [t("rest_done")] + [t("rest_line") % (r["name"], r["rest"], r["in_min"]) for r in results]
+        high = [r["name"] for r in results if r["high"]]
+        if high:
+            lines.append("")
+            lines.append(t("rest_high") % ", ".join(high))
+        blocked = [r["name"] for r in results if r["blocked"]]
+        if blocked:
+            lines.append(t("rest_blocked") % ", ".join(blocked))
+        (messagebox.showwarning if high else messagebox.showinfo)(t("rest_cal"), "\n".join(lines),
+                                                                 parent=self.root)
 
     def on_record(self, guided=False):
         try:

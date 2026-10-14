@@ -86,6 +86,20 @@ STRINGS = {
                        "표정에만 쓰고, 말을 따라가야 하는 입 모양에는 끄세요."),
     "sens_high": ("High end", "상한"),
     "sens_auto": ("Auto (5 s)", "자동 (5초)"),
+    "rest_cal": ("Neutral calibration (5 s)", "무표정 보정 (5초)"),
+    "rest_running": ("Hold a neutral face (blinking and looking around is fine)... %.1f s",
+                     "무표정을 유지하세요 (깜빡이거나 두리번거려도 됩니다)... %.1f초"),
+    "rest_done": ("Each class's low end now sits just above its value on your neutral face:",
+                  "각 클래스의 하한을 무표정일 때 값 바로 위로 맞췄습니다:"),
+    "rest_line": ("%s: neutral %.2f -> low end %.2f", "%s: 무표정 %.2f -> 하한 %.2f"),
+    "rest_high": ("The model mistakes your neutral face for: %s. The low end hides it, but weak "
+                  "expressions of these are hidden too. Fix it at the source: record neutral again now "
+                  "(and on another day), add it to the neutral class, retrain, then calibrate again.",
+                  "모델이 무표정을 다음 표정으로 착각하고 있습니다: %s. 하한으로 가렸지만 이 표정들의 약한 "
+                  "움직임도 함께 가려집니다. 근본 해결: 지금 무표정을 다시 녹화하고 (다른 날에도 한 번) "
+                  "neutral 클래스에 추가해 다시 학습한 뒤, 보정을 다시 하세요."),
+    "rest_blocked": ("These can't show at all any more (neutral is at their high end): %s - retrain first.",
+                     "다음 표정은 이제 전혀 나타나지 않습니다 (무표정 값이 상한에 닿음): %s - 먼저 다시 학습하세요."),
     "sens_reset": ("Reset", "초기화"),
     "sens_hint": ("The part of the range the expression really reaches (orange marks) is stretched to 0..1: "
                   "e.g. a class that moves 0.2..0.8 -> set 0.2 and 0.8. Auto: during 5 s make a neutral face, "

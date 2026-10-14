@@ -1595,5 +1595,56 @@ class RegularizationTests(unittest.TestCase):
         self.assertEqual((engine.cfg.model_arch, engine.cfg.loss), ("compact", "bce"))
 
 
+class RestCalibrationTests(unittest.TestCase):
+    def test_low_ends_go_above_the_neutral_face(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        names = ("neutral", "smile", "sad", "pout")
+        cfg = Config(dataset_folder=tmp.name, model_path=os.path.join(tmp.name, "m.pt"), face_port=0, eye_port=0,
+                     vrcft_port=0, infer_engine="pytorch", infer_int8=False,
+                     classes=[ExpressionClass(n, ["x.mmap"], None if n == "neutral" else "JawOpen") for n in names])
+        for c in cfg.classes:
+            c.max_power = 1.0
+        # a model whose outputs ignore the input: sigmoid(bias) per class
+        model = BuddyNet(4, "both", "compact", "sigmoid")
+        with torch.no_grad():
+            model.linear2.weight.zero_()
+            model.linear2.bias.copy_(torch.logit(torch.tensor([0.9, 0.5, 0.1, 0.99])))
+        engine = Engine(cfg)
+        engine.device = torch.device("cpu")
+        engine.start()
+        self.addCleanup(engine.stop)
+        with self.assertRaises(RuntimeError):
+            engine.calibrate_rest(seconds=0.5)  # not tracking yet
+        engine.model = model
+        engine.start_inference()
+        self.addCleanup(engine.stop_inference)
+        stop = threading.Event()
+
+        def feed():
+            while not stop.is_set():
+                engine.hub.push(neural(0.0), neural(0.0))
+                time.sleep(1 / 60)
+        threading.Thread(target=feed, daemon=True).start()
+        self.addCleanup(stop.set)
+        self.assertTrue(wait_for(lambda: engine.last_class_raw))
+        done, out = threading.Event(), {}
+        engine.calibrate_rest(seconds=1.0, on_done=lambda r, e: (out.update(r=r, e=e), done.set()))
+        self.assertTrue(done.wait(5))
+        self.assertIsNone(out["e"])
+        res = {r["name"]: r for r in out["r"]}
+        self.assertNotIn("neutral", res)  # the neutral class is left alone
+        self.assertEqual(cfg.classes[0].in_min, 0.0)
+        self.assertAlmostEqual(res["smile"]["in_min"], 0.53, places=2)
+        self.assertTrue(res["smile"]["high"])
+        self.assertAlmostEqual(res["sad"]["in_min"], 0.13, places=2)
+        self.assertFalse(res["sad"]["high"] or res["sad"]["blocked"])
+        self.assertTrue(res["pout"]["blocked"])  # resting at 0.99: no room left below the high end
+        self.assertEqual(cfg.classes[3].in_min, 0.95)
+        self.assertEqual(cfg.classes[1].in_min, res["smile"]["in_min"])
+        # a resting face now sends 0 for smile
+        self.assertTrue(wait_for(lambda: engine.last_weights.get(1) == 0.0))
+
+
 if __name__ == "__main__":
     unittest.main()
