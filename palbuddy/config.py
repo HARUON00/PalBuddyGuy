@@ -246,6 +246,9 @@ class Config:
     # model learns in-between intensities; see trainer.BatchSampler
     mixup: bool = True
     validation_split: float = 0.1  # end of each recording held out to measure accuracy; 0 = off
+    # validate on a whole recording of each class that has several (its last file) instead of
+    # recording ends: measures another session / headset fit, i.e. overfitting. Fewer training frames.
+    validation_sessions: bool = False
 
     # Inference
     smoothing: float = 0.0  # 0 = off .. 0.9 = strongest (1-Euro filter, see engine.smoothing_cutoff)

@@ -1466,5 +1466,62 @@ class Float16RecordingTests(unittest.TestCase):
         self.assertEqual((len(rec), float(rec[2, 0, 0, 0]), float(rec[2, 100, 0, 0])), (4, 2.0, -2.0))
 
 
+class SessionValidationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_split_holds_out_whole_recordings(self):
+        from palbuddy.trainer import session_holdout, split_recordings
+        # each frame's value is (recording id, frame index) so held-out frames can be traced
+        def rec(rid, n=100):
+            r = np.zeros((n, 128, 20, 20), np.float32)
+            r[:, 0, 0, 0] = rid
+            r[:, 1, 0, 0] = np.arange(n)
+            return r
+        recordings = [[rec(0), rec(1)], [rec(2)]]  # neutral: two sessions, smile: one
+        holdout = session_holdout(recordings)
+        self.assertEqual(holdout, {(0, 1)})
+        train_recs, _, val_x, val_t = split_recordings(recordings, 0.1, slice(0, 128), holdout=holdout)
+        # neutral keeps its first recording whole and loses the second entirely
+        self.assertEqual([len(r) for r in train_recs[0]], [100])
+        self.assertEqual(float(train_recs[0][0][0, 0, 0, 0]), 0.0)
+        # smile has only one recording: its end is held out as before
+        self.assertEqual([len(r) for r in train_recs[1]], [90])
+        ids = val_x[:, 0, 0, 0]
+        self.assertEqual(set(ids.tolist()), {1.0, 2.0})
+        held = val_x[ids == 1.0, 1, 0, 0]
+        self.assertEqual((held.min(), held.max(), len(held)), (0.0, 99.0, 100))  # spread over the whole file
+        self.assertTrue((val_t[ids == 1.0, 0] == 1).all() and (val_t[ids == 2.0, 1] == 1).all())
+        self.assertTrue((val_x[ids == 2.0, 1, 0, 0] >= 90).all())
+        # without a hold-out the old tail split is unchanged
+        train_recs, _, val_x, _ = split_recordings(recordings, 0.1, slice(0, 128))
+        self.assertEqual([len(r) for r in train_recs[0]], [90, 90])
+        self.assertEqual(set(val_x[:, 0, 0, 0].tolist()), {0.0, 1.0, 2.0})
+
+    def test_training_with_session_validation(self):
+        rng = np.random.default_rng(0)
+        for name, offset in (("n1", 0.0), ("n2", 0.0), ("s1", 1.0), ("s2", 1.0)):
+            mm = np.memmap(os.path.join(self.tmp.name, name + ".mmap"), np.float32, "w+", shape=(32, 128, 20, 20))
+            mm[:] = rng.normal(offset, 0.1, size=mm.shape)
+            mm.flush()
+            del mm
+        cfg = Config(dataset_folder=self.tmp.name, model_path=os.path.join(self.tmp.name, "m.pt"),
+                     epochs=2, batch_size=16, mixed_precision=False, validation_sessions=True,
+                     classes=[ExpressionClass("neutral", ["n1.mmap", "n2.mmap"]),
+                              ExpressionClass("smile", ["s1.mmap", "s2.mmap"], "JawOpen")])
+        logs = []
+        model, history = train(cfg, log_fn=logs.append, device=torch.device("cpu"), seed=0)
+        self.assertEqual(len(history), 2)
+        self.assertIn("val_acc", model.val_metrics)
+        self.assertTrue(any("n2.mmap (neutral), s2.mmap (smile)" in line for line in logs), logs[:4])
+        self.assertTrue(any("Holding out 64 frames" in line for line in logs), logs[:4])
+        # one recording per class: falls back to the recording ends and says so
+        cfg.classes = [ExpressionClass("neutral", ["n1.mmap"]), ExpressionClass("smile", ["s1.mmap"], "JawOpen")]
+        logs.clear()
+        train(cfg, log_fn=logs.append, device=torch.device("cpu"), seed=0)
+        self.assertTrue(any("No class has two recordings" in line for line in logs), logs[:4])
+
+
 if __name__ == "__main__":
     unittest.main()

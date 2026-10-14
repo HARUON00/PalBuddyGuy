@@ -76,6 +76,7 @@ STRINGS = {
     "cue_up_half": ("Slowly to half ↑", "천천히 절반까지 ↑"),
     "cue_hold_half": ("Hold half", "절반 유지"),
     "mixup": ("Learn in-between intensities (mixup)", "중간 강도 학습 (mixup)"),
+    "val_sessions": ("Validate on another session", "다른 세션으로 검증"),
     "cmp_err": ("Int. error", "강도 오차"),
     "sens_stability": ("Stability", "안정화"),
     "stability_value": ("ignores < %.0f ms", "%.0f ms 미만 무시"),

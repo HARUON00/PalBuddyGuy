@@ -113,23 +113,54 @@ def check_recording(rec, channels, path):
 
 
 VAL_FRAMES_PER_FILE = 32
+VAL_FRAMES_PER_SESSION = 128  # frames taken from a recording held out as a whole
 
 
-def split_recordings(recordings, fraction, channels, labels=None):
-    """Hold out the *end* of every recording for validation.
+def session_holdout(recordings):
+    """{(class, recording index)} to hold out whole: the last recording of every
+    class that has more than one."""
+    return {(c, len(recs) - 1) for c, recs in enumerate(recordings) if len(recs) > 1}
 
-    Neighbouring frames are nearly identical, so a random split would leak;
-    a contiguous tail measures how well the model handles moments it hasn't
-    seen. Returns (train recordings, train labels, val_x, val_targets); the val
-    arrays are None when nothing could be held out."""
+
+def _val_frames(c, rec, lab, idx, channels, num_classes):
+    x = np.ascontiguousarray(rec[idx, channels], dtype=np.float32)
+    t = (targets_for(c, lab[idx], num_classes) if lab is not None
+         else np.repeat(targets_for(c, None, num_classes), len(idx), axis=0))
+    return x, t
+
+
+def split_recordings(recordings, fraction, channels, labels=None, holdout=()):
+    """Hold out frames for validation.
+
+    Recordings listed in `holdout` ((class, index) pairs, see session_holdout)
+    go to validation whole: they were made at another time / headset fit than
+    the class's training recordings, so they show how well the model handles a
+    new session - the situation where an overfitted model breaks down. The
+    other recordings of such a class are not split. Every other recording has
+    its *end* held out: neighbouring frames are nearly identical, so a random
+    split would leak, but the tail is still the same session and therefore
+    optimistic. Returns (train recordings, train labels, val_x, val_targets);
+    the val arrays are None when nothing could be held out."""
     num_classes = len(recordings)
     labels = labels or [[None] * len(recs) for recs in recordings]
     if fraction <= 0:
         return recordings, labels, None, None
+    holdout = set(holdout)
+    whole_classes = {c for c, _ in holdout}
     train, train_labels, xs, ts = [], [], [], []
     for c, recs in enumerate(recordings):
         kept, kept_labels = [], []
-        for rec, lab in zip(recs, labels[c]):
+        for i, (rec, lab) in enumerate(zip(recs, labels[c])):
+            if (c, i) in holdout:
+                idx = np.linspace(0, len(rec) - 1, num=min(VAL_FRAMES_PER_SESSION, len(rec))).astype(int)
+                x, t = _val_frames(c, rec, lab, idx, channels, num_classes)
+                xs.append(x)
+                ts.append(t)
+                continue
+            if c in whole_classes:
+                kept.append(rec)
+                kept_labels.append(lab)
+                continue
             n_train = int(len(rec) * (1 - fraction))
             if n_train < 16 or len(rec) - n_train < 4:
                 kept.append(rec)  # too short to split
@@ -138,9 +169,9 @@ def split_recordings(recordings, fraction, channels, labels=None):
             kept.append(rec[:n_train])
             kept_labels.append(None if lab is None else lab[:n_train])
             idx = np.linspace(n_train, len(rec) - 1, num=min(VAL_FRAMES_PER_FILE, len(rec) - n_train)).astype(int)
-            xs.append(np.ascontiguousarray(rec[idx, channels], dtype=np.float32))
-            ts.append(targets_for(c, None if lab is None else lab[idx], num_classes) if lab is not None
-                      else np.repeat(targets_for(c, None, num_classes), len(idx), axis=0))
+            x, t = _val_frames(c, rec, lab, idx, channels, num_classes)
+            xs.append(x)
+            ts.append(t)
         train.append(kept)
         train_labels.append(kept_labels)
     if not xs:
@@ -268,10 +299,22 @@ class Data:
     def __init__(self, cfg, log_fn=print):
         recordings, labels, self.total_frames = load_recordings(cfg, log_fn)
         self.channels = channels_for(cfg.input_mode)
+        holdout = session_holdout(recordings) if cfg.validation_sessions and cfg.validation_split > 0 else set()
         self.recordings, self.labels, self.val_x, self.val_t = split_recordings(
-            recordings, cfg.validation_split, self.channels, labels)
+            recordings, cfg.validation_split, self.channels, labels, holdout)
+        if holdout:
+            held = sorted(holdout)
+            log_fn("Validating on whole recordings from another session: %s" % ", ".join(
+                "%s (%s)" % (cfg.classes[c].files[i], cfg.classes[c].name) for c, i in held))
+            single = [cfg.classes[c].name for c in range(len(recordings)) if c not in {c for c, _ in held}]
+            if single:
+                log_fn("Only one recording, validated on its end instead: %s - record these again on another "
+                       "day (or after putting the headset back on) to check them across sessions"
+                       % ", ".join(single))
+        elif cfg.validation_sessions and self.val_x is not None:
+            log_fn("No class has two recordings, so validation uses the end of each recording")
         if self.val_x is not None:
-            log_fn("Holding out %d frames (end of each recording) for validation" % len(self.val_x))
+            log_fn("Holding out %d frames for validation" % len(self.val_x))
         self._stats = None
 
     def statistics(self):

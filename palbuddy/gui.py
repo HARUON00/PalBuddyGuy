@@ -892,6 +892,8 @@ class App:
             side="left", padx=(4, 12))
         ttk.Label(opts, text=t("lr")).pack(side="left")
         ttk.Entry(opts, textvariable=self.lr, width=9).pack(side="left", padx=(4, 12))
+        self.val_sessions = tk.BooleanVar(value=self.cfg.validation_sessions)
+        ttk.Checkbutton(opts, text=t("val_sessions"), variable=self.val_sessions).pack(side="left", padx=(12, 0))
         opts2 = ttk.Frame(tab)
         opts2.pack(fill="x", pady=(0, 6))
         ttk.Checkbutton(opts2, text=t("amp"), variable=self.amp).pack(side="left")
@@ -1592,6 +1594,7 @@ class App:
         self.cfg.mixed_precision = bool(self.amp.get())
         self.cfg.cache_datasets_in_ram = bool(self.cache.get())
         self.cfg.mixup = bool(self.mixup.get())
+        self.cfg.validation_sessions = bool(self.val_sessions.get())
         self.cfg.model_arch = next(a for a, text in self.arch_labels.items() if text == self.arch_var.get())
         self.cfg.loss = next(k for k, text in self.loss_labels.items() if text == self.loss_var.get())
 

@@ -133,6 +133,8 @@ After switching model or method, run FastCal once: the output scale of a new mod
 ### Validation accuracy
 Training holds out the last 10 % of every recording (`validation_split` in `config.json`) and reports accuracy, recognised, false activations and the score after each epoch, plus the worst classes at the end. The hold-out is taken from the end of each recording rather than as random frames, because neighbouring frames are nearly identical and a random split would overstate accuracy. It is still the same session as the training frames, so the numbers are optimistic; they are meant for comparing models, not as absolute accuracy.
 
+**Validate on another session** (Train tab, off by default, `validation_sessions`): for every class with two or more recordings, the class's *last* recording is held out whole instead, and its other recordings are trained on in full. Make that recording on another day or after taking the headset off and on, and the numbers show how the model copes with a new headset fit - which is where an overfitted model falls apart, and what the same-session numbers can't show. The best-epoch choice and *Compare models* then also pick by this. Classes with a single recording still use their recording's end, and training lists them. It costs training frames (one recording per such class), so turn it off again for the final training once you have picked a model and settings.
+
 ### Measurements
 One 2.8 GHz Xeon core, frames arriving at 60 Hz, whole-process CPU as % of one core, memory measured while tracking:
 
