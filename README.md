@@ -27,6 +27,8 @@ Start Pal Buddy Guy (double-click) **before** SRanipalRuntime, then **VRCFaceTra
 
 SRanipal only runs the cameras (and with them the network Pal Buddy Guy reads from) while an app uses it; its tray icons turn green then. Pal Buddy Guy doesn't use the SRanipal API itself, so until VRCFaceTracking starts, the icons stay grey and no tracker data arrives - the app shows a hint meanwhile. Recording and tracking need VRCFaceTracking running; training doesn't.
 
+The window starts in **simple mode**: only what you need to record, train and track. Tick **Advanced settings** (top right) for everything else: training options and model comparison, sensitivity per class, softness, merged parameters, OSC per class, ports and inference performance. Hidden settings keep their values and stay in effect; switching modes never changes a setting.
+
 Manual / advanced use, with your own Python environment:
 
 ```

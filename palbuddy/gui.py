@@ -41,6 +41,49 @@ def detect_language(setting):
     return "ko" if "ko" in loc.lower() or "korean" in loc.lower() else "en"
 
 
+class AdvancedOnly:
+    """Widgets that are only shown in advanced mode.
+
+    Hiding never changes a setting: the variables behind hidden widgets keep their values
+    and are still saved and used. Packed widgets go back exactly where they were (before
+    the sibling that originally followed them); grid widgets remember their cell."""
+
+    def __init__(self):
+        self.items = []  # [widget, geometry manager, (pack info, later siblings) or None]
+
+    def add(self, *widgets):
+        for w in widgets:
+            self.items.append([w, w.winfo_manager(), None])
+
+    def snapshot(self):
+        """Call once the layout is complete, before the first apply()."""
+        for item in self.items:
+            w, manager, _ = item
+            if manager == "pack":
+                info = w.pack_info()
+                siblings = info["in"].pack_slaves()
+                item[2] = (info, siblings[siblings.index(w) + 1:])
+
+    def apply(self, advanced):
+        for w, manager, extra in self.items:
+            if manager == "grid":
+                if advanced:
+                    w.grid()
+                else:
+                    w.grid_remove()
+            elif manager == "pack":
+                if not advanced:
+                    w.pack_forget()
+                elif w.winfo_manager() != "pack":
+                    info, later = extra
+                    info = dict(info)
+                    packed = info["in"].pack_slaves()
+                    following = next((s for s in later if s in packed), None)
+                    if following is not None:
+                        info["before"] = following
+                    w.pack(**info)
+
+
 class QueueLogHandler(logging.Handler):
     def __init__(self, q):
         super().__init__()
@@ -112,21 +155,28 @@ class ClassDialog(tk.Toplevel):
         ttk.Combobox(frm, textvariable=self.target, values=shapes, state="readonly", width=28).grid(
             row=1, column=1, sticky="ew")
 
-        ttk.Label(frm, text=t("col_power")).grid(row=2, column=0, sticky="w")
+        power_label = ttk.Label(frm, text=t("col_power"))
+        power_label.grid(row=2, column=0, sticky="w")
         self.power = tk.StringVar(value=str(cls.max_power))
-        ttk.Entry(frm, textvariable=self.power, width=10).grid(row=2, column=1, sticky="w")
+        power_entry = ttk.Entry(frm, textvariable=self.power, width=10)
+        power_entry.grid(row=2, column=1, sticky="w")
 
         self.original = cls
-        ttk.Label(frm, text=t("osc_name")).grid(row=3, column=0, sticky="w", pady=(6, 2))
+        osc_label = ttk.Label(frm, text=t("osc_name"))
+        osc_label.grid(row=3, column=0, sticky="w", pady=(6, 2))
         self.osc_name = tk.StringVar(value=cls.osc_name or "")
-        ttk.Entry(frm, textvariable=self.osc_name, width=30).grid(row=3, column=1, sticky="ew", pady=(6, 2))
+        osc_entry = ttk.Entry(frm, textvariable=self.osc_name, width=30)
+        osc_entry.grid(row=3, column=1, sticky="ew", pady=(6, 2))
         self.osc_format = tk.StringVar(value=cls.osc_format)
         self.osc_bits = tk.IntVar(value=cls.osc_bits)
         fmt_frame = ttk.Frame(frm)
         fmt_frame.grid(row=4, column=0, columnspan=2, sticky="w")
         format_row(fmt_frame, 0, app, self.osc_format, self.osc_bits)
-        ttk.Label(frm, text=t("osc_name_hint"), foreground="#666", wraplength=420, justify="left").grid(
-            row=5, column=0, columnspan=2, sticky="w")
+        osc_hint = ttk.Label(frm, text=t("osc_name_hint"), foreground="#666", wraplength=420, justify="left")
+        osc_hint.grid(row=5, column=0, columnspan=2, sticky="w")
+        if not app.cfg.ui_advanced:  # simple mode: max power and OSC keep their values, just hidden
+            for w in (power_label, power_entry, osc_label, osc_entry, fmt_frame, osc_hint):
+                w.grid_remove()
 
         ttk.Label(frm, text=t("files_hint")).grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.files = tk.Listbox(frm, selectmode="multiple", height=10, exportselection=False)
@@ -542,6 +592,7 @@ class App:
         self.last_val = None  # (validation loss, validation accuracy) of the last epoch
         self.compare_dialog = None
         self.bars = {}
+        self.adv = AdvancedOnly()
 
         self._build_status_bar()
         self.nb = ttk.Notebook(self.root)
@@ -552,6 +603,8 @@ class App:
         self._build_merged_tab()
         self._build_settings_tab()
         self._build_log_tab()
+        self.adv.snapshot()
+        self._apply_ui_mode()
 
         self.refresh_classes()
         self.refresh_recordings()
@@ -576,6 +629,9 @@ class App:
             self.status_labels[key] = (dot, lbl)
         self.device_label = ttk.Label(bar, text="")
         self.device_label.pack(side="right")
+        self.advanced_var = tk.BooleanVar(value=self.cfg.ui_advanced)
+        ttk.Checkbutton(bar, text=t("advanced_mode"), variable=self.advanced_var,
+                        command=self.on_ui_mode).pack(side="right", padx=(0, 16))
         self.status_bar = bar
         # shown while no tracker data arrives; SRanipal only runs the cameras for a client app
         self.no_data_hint = ttk.Label(self.root, text=t("no_data_hint"), foreground="#c05000", wraplength=840,
@@ -583,6 +639,34 @@ class App:
         self.no_data_hint.bind("<Configure>", lambda e: self.no_data_hint.configure(wraplength=max(200, e.width - 16)))
         self.no_data_shown = False
         self._rest_text = None
+
+    def on_ui_mode(self):
+        self.cfg.ui_advanced = bool(self.advanced_var.get())
+        self._apply_ui_mode()
+        self.engine.save_config()
+
+    def _apply_ui_mode(self):
+        """Simple mode hides what a first-time user doesn't need; values stay as they are."""
+        advanced = self.cfg.ui_advanced
+        self.adv.apply(advanced)
+        if advanced:
+            self.nb.add(self.merged_tab)  # a hidden tab comes back at its old position
+        else:
+            if self.nb.select() == str(self.merged_tab):
+                self.nb.select(0)
+            self.nb.hide(self.merged_tab)
+        self.class_tree["displaycolumns"] = ("target", "osc", "power", "files") if advanced else ("target", "files")
+        self._sync_mode_box()
+
+    def _sync_mode_box(self):
+        """The input-mode box: always in advanced mode; in simple mode only while the
+        connected trackers don't match the selected mode (its hint and buttons are inside)."""
+        show = self.cfg.ui_advanced or bool(self.shown_hint)
+        if show and self.mode_box.winfo_manager() != "pack":
+            self.mode_box.pack(in_=self.mode_anchor.master, fill="x", pady=(0, 6), before=self.mode_anchor)
+            self.mode_box.lift(self.mode_anchor.master)
+        elif not show and self.mode_box.winfo_manager() == "pack":
+            self.mode_box.pack_forget()
 
     def _build_live_tab(self):
         t = self.t
@@ -642,12 +726,17 @@ class App:
         self.softness_label.pack(side="left")
         ttk.Label(soft_row, text=t("softness_help"), foreground="#666").pack(side="left", padx=(6, 0))
         self._show_softness()
+        self.adv.add(soft_row)
         self.infer_stats = ttk.Label(right, text=t("not_tracking"))
         self.infer_stats.pack(anchor="w", pady=(6, 0))
         self.fastcal_label = ttk.Label(right, text=t("fastcal_help"), foreground="#666")
         self.fastcal_label.pack(anchor="w", pady=(2, 6))
         mode_box.pack(in_=right, fill="x", pady=(0, 6))
         mode_box.lift(right)  # created before `right`, so raise it above its container
+        # placeholder that keeps the input-mode box's place while it is hidden (simple mode
+        # shows the box only when the connected trackers don't match the mode)
+        self.mode_anchor = ttk.Frame(right, height=1)
+        self.mode_anchor.pack(fill="x", after=mode_box)
 
         self._build_sensitivity_panel(right)
         self.bars_frame = ttk.LabelFrame(right, text=t("outputs"), padding=6)
@@ -685,6 +774,7 @@ class App:
         self.sens_hint.grid(row=3, column=0, columnspan=4, sticky="w", pady=(4, 0))
         box.columnconfigure(1, weight=1)
         self._select_sensitivity(None)
+        self.adv.add(box)
 
     def _select_sensitivity(self, index):
         t = self.t
@@ -821,14 +911,17 @@ class App:
         ttk.Label(form, text=t("rec_name")).grid(row=0, column=0, sticky="w")
         self.rec_name = tk.StringVar()
         ttk.Entry(form, textvariable=self.rec_name, width=24).grid(row=0, column=1, sticky="w", padx=6)
-        ttk.Label(form, text=t("rec_frames")).grid(row=0, column=2, sticky="w", padx=(12, 0))
+        frames_label = ttk.Label(form, text=t("rec_frames"))
+        frames_label.grid(row=0, column=2, sticky="w", padx=(12, 0))
         self.rec_frames = tk.IntVar(value=self.cfg.record_frames)
-        ttk.Spinbox(form, from_=256, to=16384, increment=256, textvariable=self.rec_frames, width=8).grid(
-            row=0, column=3, padx=6)
-        ttk.Label(form, text=t("rec_countdown")).grid(row=0, column=4, sticky="w", padx=(12, 0))
+        frames_box = ttk.Spinbox(form, from_=256, to=16384, increment=256, textvariable=self.rec_frames, width=8)
+        frames_box.grid(row=0, column=3, padx=6)
+        countdown_label = ttk.Label(form, text=t("rec_countdown"))
+        countdown_label.grid(row=0, column=4, sticky="w", padx=(12, 0))
         self.rec_countdown = tk.DoubleVar(value=self.cfg.record_countdown)
-        ttk.Spinbox(form, from_=0, to=30, increment=1, textvariable=self.rec_countdown, width=5).grid(
-            row=0, column=5, padx=6)
+        countdown_box = ttk.Spinbox(form, from_=0, to=30, increment=1, textvariable=self.rec_countdown, width=5)
+        countdown_box.grid(row=0, column=5, padx=6)
+        self.adv.add(frames_label, frames_box, countdown_label, countdown_box)
         self.rec_btn = ttk.Button(form, text=t("record"), command=self.on_record)
         self.rec_btn.grid(row=0, column=6, padx=(12, 4))
         self.guided_btn = ttk.Button(form, text=t("record_guided"), command=lambda: self.on_record(guided=True))
@@ -866,7 +959,10 @@ class App:
         side.pack(side="left", fill="y", padx=6)
         for key, cmd in (("refresh", self.refresh_recordings), ("add_to_class", self.on_add_to_class),
                          ("delete", self.on_delete_recording), ("convert_pkl", self.on_convert)):
-            ttk.Button(side, text=t(key), command=cmd).pack(fill="x", pady=2)
+            b = ttk.Button(side, text=t(key), command=cmd)
+            b.pack(fill="x", pady=2)
+            if key == "convert_pkl":
+                self.adv.add(b)
 
     def _build_train_tab(self):
         t = self.t
@@ -943,6 +1039,7 @@ class App:
         self.wd = tk.StringVar(value=str(self.cfg.weight_decay))
         ttk.Label(opts4, text=t("weight_decay")).pack(side="left")
         ttk.Entry(opts4, textvariable=self.wd, width=6).pack(side="left", padx=(4, 0))
+        self.adv.add(opts, opts2, opts3, opts4)
 
         ctl = ttk.Frame(tab)
         ctl.pack(fill="x")
@@ -953,6 +1050,7 @@ class App:
         ttk.Button(ctl, text=t("load_model"), command=self.on_load_model).pack(side="left")
         self.compare_btn = ttk.Button(ctl, text=t("compare"), command=self.on_compare)
         self.compare_btn.pack(side="left", padx=(16, 0))
+        self.adv.add(self.compare_btn)
         self.train_progress = ttk.Progressbar(tab, maximum=1.0)
         self.train_progress.pack(fill="x", pady=(8, 2))
         self.train_status = ttk.Label(tab, text="")
@@ -965,7 +1063,7 @@ class App:
 
     def _build_merged_tab(self):
         t = self.t
-        tab = ttk.Frame(self.nb, padding=8)
+        tab = self.merged_tab = ttk.Frame(self.nb, padding=8)
         self.nb.add(tab, text=t("tab_merged"))
         ttk.Label(tab, text=t("merged_help"), foreground="#666", wraplength=940, justify="left").pack(anchor="w")
         box = ttk.Frame(tab)
@@ -1079,10 +1177,14 @@ class App:
         self.lang_var = tk.StringVar(value=c.language)
         row = 0
 
-        def line(label, widget_factory):
+        def line(label, widget_factory, advanced=False):
             nonlocal row
-            ttk.Label(tab, text=label).grid(row=row, column=0, sticky="w", pady=3, padx=(0, 10))
-            widget_factory().grid(row=row, column=1, sticky="w", pady=3)
+            lbl = ttk.Label(tab, text=label)
+            lbl.grid(row=row, column=0, sticky="w", pady=3, padx=(0, 10))
+            widget = widget_factory()
+            widget.grid(row=row, column=1, sticky="w", pady=3)
+            if advanced:
+                self.adv.add(lbl, widget)
             row += 1
 
         def path_row(label, key, is_dir):
@@ -1110,16 +1212,19 @@ class App:
             ttk.Radiobutton(f, text=t("source_direct"), value="direct", variable=self.source_var).pack(anchor="w")
             ttk.Radiobutton(f, text=t("source_proxy"), value="proxy", variable=self.source_var).pack(anchor="w")
             return f
-        line(t("source"), source_widget)
-        line(t("bind_host"), lambda: ttk.Entry(tab, textvariable=self.settings["bind_host"], width=16))
+        line(t("source"), source_widget, advanced=True)
+        line(t("bind_host"), lambda: ttk.Entry(tab, textvariable=self.settings["bind_host"], width=16), advanced=True)
         for key in ("face_port", "eye_port", "proxy_port", "vrcft_port"):
-            line(t(key), lambda key=key: ttk.Entry(tab, textvariable=self.settings[key], width=8))
-        line(t("max_rate"), lambda: ttk.Entry(tab, textvariable=self.settings["max_send_rate"], width=8))
+            line(t(key), lambda key=key: ttk.Entry(tab, textvariable=self.settings[key], width=8), advanced=True)
+        line(t("max_rate"), lambda: ttk.Entry(tab, textvariable=self.settings["max_send_rate"], width=8),
+             advanced=True)
         line(t("language"), lambda: ttk.Combobox(tab, textvariable=self.lang_var, values=("auto", "en", "ko"),
                                                  state="readonly", width=8))
         ttk.Button(tab, text=t("save"), command=self.on_save_settings).grid(row=row, column=1, sticky="w", pady=12)
         self._build_vrcft_box(tab).grid(row=row + 1, column=0, columnspan=2, sticky="we", pady=(4, 0))
-        self._build_perf_box(tab).grid(row=0, column=2, rowspan=row + 1, sticky="nw", padx=(24, 0))
+        perf = self._build_perf_box(tab)
+        perf.grid(row=0, column=2, rowspan=row + 1, sticky="nw", padx=(24, 0))
+        self.adv.add(perf)
 
     def _build_vrcft_box(self, parent):
         t = self.t
@@ -1128,9 +1233,11 @@ class App:
         self.max_mode_var = tk.BooleanVar(value=self.cfg.vrcft_override_mode == "max")
         self.vrcft_status = ttk.Label(box, text="", wraplength=520, justify="left")
         self.vrcft_status.pack(anchor="w")
-        ttk.Checkbutton(box, text=t("wrap_sranipal"), variable=self.wrap_var).pack(anchor="w", pady=(4, 0))
-        ttk.Checkbutton(box, text=t("max_mode"), variable=self.max_mode_var,
-                        command=self.on_max_mode).pack(anchor="w")
+        wrap = ttk.Checkbutton(box, text=t("wrap_sranipal"), variable=self.wrap_var)
+        wrap.pack(anchor="w", pady=(4, 0))
+        max_mode = ttk.Checkbutton(box, text=t("max_mode"), variable=self.max_mode_var, command=self.on_max_mode)
+        max_mode.pack(anchor="w")
+        self.adv.add(wrap, max_mode)
         btns = ttk.Frame(box)
         btns.pack(anchor="w", pady=(6, 0))
         ttk.Button(btns, text=t("install"), command=self.on_vrcft_install).pack(side="left")
@@ -1354,6 +1461,7 @@ class App:
                 self.hint_frame.pack(anchor="w", pady=(6, 0))
             else:
                 self.hint_frame.pack_forget()
+            self._sync_mode_box()
         v = s["vrcft"]
         dot, lbl = self.status_labels["vrcft"]
         state = "ok" if v.get("connected") else "disconnected"

@@ -284,6 +284,8 @@ class Config:
     # GUI
     language: str = "auto"  # "auto", "en" or "ko"
     show_preview: bool = True
+    # False: only the settings a first-time user needs; the rest keep their values but are hidden
+    ui_advanced: bool = False
 
     classes: List[ExpressionClass] = field(default_factory=list)
 

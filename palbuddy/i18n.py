@@ -14,6 +14,7 @@ STRINGS = {
     "ok": ("connected", "연결됨"),
     "stalled": ("no data", "데이터 없음"),
     "disconnected": ("disconnected", "연결 안 됨"),
+    "advanced_mode": ("Advanced settings", "고급 설정"),
     "no_data_hint": ("No tracker data. SRanipal only runs the cameras while an app uses it - its tray icons turn "
                      "green then. Start VRCFaceTracking (recording and tracking need it running). If its icons are "
                      "green and this stays, restart SRanipal.",
