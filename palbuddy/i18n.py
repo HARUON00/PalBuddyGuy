@@ -1,0 +1,336 @@
+"""Tiny translation table for the GUI (English / 한국어)."""
+
+STRINGS = {
+    "title": ("Pal Buddy Guy", "Pal Buddy Guy"),
+    "tab_live": ("Live", "실시간"),
+    "tab_record": ("Record", "녹화"),
+    "tab_train": ("Train", "학습"),
+    "tab_settings": ("Settings", "설정"),
+    "tab_log": ("Log", "로그"),
+    "eye": ("Eye tracker", "아이 트래커"),
+    "face": ("Face tracker", "페이셜 트래커"),
+    "vrcft": ("VRCFaceTracking", "VRCFaceTracking"),
+    "device": ("Device", "장치"),
+    "ok": ("connected", "연결됨"),
+    "stalled": ("no data", "데이터 없음"),
+    "disconnected": ("disconnected", "연결 안 됨"),
+    "advanced_mode": ("Advanced settings", "고급 설정"),
+    "no_data_hint": ("No tracker data. SRanipal only runs the cameras while an app uses it - its tray icons turn "
+                     "green then. Start VRCFaceTracking (recording and tracking need it running). If its icons are "
+                     "green and this stays, restart SRanipal.",
+                     "트래커 데이터가 없습니다. SRanipal은 앱이 사용할 때만 카메라를 켭니다 (그때 트레이 아이콘이 "
+                     "초록색이 됩니다). VRCFaceTracking을 실행하세요 (녹화와 트래킹에 필요합니다). 아이콘이 초록색인데도 "
+                     "이 문구가 계속 보이면 SRanipal을 다시 시작하세요."),
+    "camera": ("Camera preview (eyes on top, face below)", "카메라 미리보기 (위: 눈, 아래: 얼굴)"),
+    "swap": ("Swap eye/face", "눈/얼굴 뒤바꾸기"),
+    "preview": ("Show preview", "미리보기 표시"),
+    "start_infer": ("Start tracking", "트래킹 시작"),
+    "stop_infer": ("Stop tracking", "트래킹 중지"),
+    "fastcal": ("FastCal", "빠른 보정 (FastCal)"),
+    "smoothing": ("Smoothing", "스무딩"),
+    "softness": ("Softness", "부드러움"),
+    "softness_help": ("BCE models: gradual instead of on/off", "BCE 모델: 켜짐/꺼짐 대신 서서히"),
+    "off": ("off", "끔"),
+    "outputs": ("Outputs (raw → sent)", "출력 (원시값 → 전송값)"),
+    "infer_stats": ("Tracking: %.0f fps, %.1f ms/frame · %s · process CPU %.0f%%",
+                    "트래킹: %.0f fps, 프레임당 %.1f ms · %s · 프로세스 CPU %.0f%%"),
+    "perf": ("Inference performance", "추론 성능"),
+    "infer_engine": ("Engine", "추론 엔진"),
+    "eng_auto": ("auto (ONNX Runtime if installed)", "자동 (ONNX Runtime 우선)"),
+    "eng_onnx": ("ONNX Runtime (fastest, lightest)", "ONNX Runtime (가장 빠르고 가벼움)"),
+    "eng_pytorch": ("PyTorch", "PyTorch"),
+    "infer_device": ("Run on", "실행 장치"),
+    "dev_auto": ("auto (GPU if available)", "자동 (GPU 우선)"),
+    "dev_cpu": ("CPU (frees the GPU for VR)", "CPU (GPU를 VR에 양보)"),
+    "dev_gpu": ("GPU", "GPU"),
+    "infer_threads": ("CPU threads", "CPU 스레드 수"),
+    "infer_int8": ("int8 quantization on CPU (≈2× faster, no retraining)",
+                   "CPU에서 int8 양자화 (약 2배 빠름, 재학습 불필요)"),
+    "max_infer_rate": ("Max tracking rate (Hz, 0 = every frame)", "최대 추론 빈도 (Hz, 0 = 모든 프레임)"),
+    "perf_apply": ("Apply", "적용"),
+    "vrcft_module": ("VRCFaceTracking module", "VRCFaceTracking 모듈"),
+    "tab_merged": ("Merged", "병합 파라미터"),
+    "osc_format": ("OSC format", "OSC 형식"),
+    "fmt_float": ("float", "float"),
+    "fmt_binary": ("binary", "바이너리"),
+    "fmt_both": ("float + binary", "float + 바이너리"),
+    "osc_bits": ("bits", "비트 수"),
+    "osc_name": ("OSC parameter", "OSC 파라미터"),
+    "osc_name_hint": ("Optional: also send this class (0..1) straight to VRChat under this avatar parameter name. "
+                      "Names VRCFaceTracking uses (v1/v2, including binary and \"/Name\" paths) are refused so "
+                      "normal face tracking is never disturbed. Binary: <name>1, <name>2, <name>4 ... bools, "
+                      "decoded like VRCFaceTracking binary parameters.",
+                      "선택 사항: 이 클래스 값(0~1)을 이 이름의 아바타 파라미터로 VRChat에 직접 보냅니다. "
+                      "VRCFaceTracking이 쓰는 이름(v1/v2, 바이너리, \"/이름\" 경로 포함)은 기존 페이셜에 영향을 주지 않도록 "
+                      "막습니다. 바이너리: <이름>1, <이름>2, <이름>4 … bool 파라미터 (VRCFaceTracking 바이너리와 같은 방식)."),
+    "col_osc": ("OSC", "OSC"),
+    "sens_title_none": ("Sensitivity (click a class above)", "민감도 (위 목록에서 클래스를 클릭)"),
+    "sens_title": ("Sensitivity: %s", "민감도: %s"),
+    "sens_low": ("Low end", "하한"),
+    "record_guided": ("Guided recording", "가이드 녹화"),
+    "guided_help": ("Guided recording (recommended for expressions, ~36 s): follow the green bar and the beeps "
+                    "(no sound = neutral face, higher pitch = stronger). It ramps up, holds, goes back to neutral "
+                    "and to half strength, 3 times. The model then learns how strong the expression is, not only "
+                    "on/off, and every recording contains its own neutral frames.",
+                    "가이드 녹화 (표정 녹화에 권장, 약 36초): 초록 막대와 비프음을 따라 표정을 지으세요 (소리 없음 = "
+                    "무표정, 음이 높을수록 강하게). 서서히 최대 → 유지 → 무표정 → 절반 강도를 3번 반복합니다. 모델이 "
+                    "켜짐/꺼짐뿐 아니라 표정의 강도를 배우고, 녹화마다 같은 착용 상태의 무표정도 함께 들어갑니다."),
+    "col_guided": ("Guided", "가이드"),
+    "cue_neutral": ("Neutral face", "무표정"),
+    "cue_up": ("Slowly to full ↑", "천천히 최대로 ↑"),
+    "cue_hold": ("Hold full", "최대 유지"),
+    "cue_down": ("Slowly back ↓", "천천히 풀기 ↓"),
+    "cue_up_half": ("Slowly to half ↑", "천천히 절반까지 ↑"),
+    "cue_hold_half": ("Hold half", "절반 유지"),
+    "mixup": ("Learn in-between intensities (mixup)", "중간 강도 학습 (mixup)"),
+    "val_sessions": ("Validate on another session", "다른 세션으로 검증"),
+    "cmp_err": ("Int. error", "강도 오차"),
+    "sens_stability": ("Stability", "안정화"),
+    "stability_value": ("ignores < %.0f ms", "%.0f ms 미만 무시"),
+    "stability_hint": ("Stability: ignores changes shorter than the shown time, e.g. emotions flickering while "
+                       "talking. Use it on emotions, keep it off for mouth shapes that must follow speech.",
+                       "안정화: 표시된 시간보다 짧은 변화를 무시합니다 (예: 말할 때 감정 표정이 출렁임). 감정 "
+                       "표정에만 쓰고, 말을 따라가야 하는 입 모양에는 끄세요."),
+    "sens_high": ("High end", "상한"),
+    "sens_auto": ("Auto (5 s)", "자동 (5초)"),
+    "rest_cal": ("Neutral cal.", "무표정 보정"),
+    "rest_running": ("Hold a neutral face (blinking and looking around is fine)... %.1f s",
+                     "무표정을 유지하세요 (깜빡이거나 두리번거려도 됩니다)... %.1f초"),
+    "rest_done": ("Each class's low end now sits just above its value on your neutral face:",
+                  "각 클래스의 하한을 무표정일 때 값 바로 위로 맞췄습니다:"),
+    "rest_line": ("%s: neutral %.2f -> low end %.2f", "%s: 무표정 %.2f -> 하한 %.2f"),
+    "rest_high": ("The model mistakes your neutral face for: %s. The low end hides it, but weak "
+                  "expressions of these are hidden too. Fix it at the source: record neutral again now "
+                  "(and on another day), add it to the neutral class, retrain, then calibrate again.",
+                  "모델이 무표정을 다음 표정으로 착각하고 있습니다: %s. 하한으로 가렸지만 이 표정들의 약한 "
+                  "움직임도 함께 가려집니다. 근본 해결: 지금 무표정을 다시 녹화하고 (다른 날에도 한 번) "
+                  "neutral 클래스에 추가해 다시 학습한 뒤, 보정을 다시 하세요."),
+    "rest_blocked": ("These can't show at all any more (neutral is at their high end): %s - retrain first.",
+                     "다음 표정은 이제 전혀 나타나지 않습니다 (무표정 값이 상한에 닿음): %s - 먼저 다시 학습하세요."),
+    "sens_reset": ("Reset", "초기화"),
+    "sens_hint": ("The part of the range the expression really reaches (orange marks) is stretched to 0..1: "
+                  "e.g. a class that moves 0.2..0.8 -> set 0.2 and 0.8. Auto: during 5 s make a neutral face, "
+                  "then the full expression.",
+                  "표정이 실제로 움직이는 구간(주황색 표시)을 0~1로 늘립니다. 예: 0.2~0.8로만 움직이면 하한 0.2, 상한 0.8. "
+                  "자동: 5초 동안 무표정 → 최대 표정을 지어 주세요."),
+    "sens_need_tracking": ("Start tracking and select a class first.", "트래킹을 시작하고 클래스를 먼저 선택하세요."),
+    "sens_auto_running": ("Measuring... %.1f s  (neutral face, then the full expression)",
+                          "측정 중... %.1f초  (무표정 → 최대 표정)"),
+    "sens_auto_flat": ("The value hardly moved; nothing changed.", "값이 거의 움직이지 않아 변경하지 않았습니다."),
+    "binary_signed": ("Binary: sign (<name>Negative) + magnitude, like VRCFaceTracking.",
+                      "바이너리: 부호(<이름>Negative) + 크기, VRCFaceTracking과 같은 방식."),
+    "binary_unsigned": ("Binary: position within the range (min end = 0, max end = 1).",
+                        "바이너리: 범위 안의 위치 (min 쪽 = 0, max 쪽 = 1)."),
+    "merged_format": ("Format", "형식"),
+    "merged_terms": ("Classes × weight", "클래스 × 가중치"),
+    "merged_add_term": ("+ Add class", "+ 클래스 추가"),
+    "merged_terms_hint": ("combined = sum of class × weight, limited to -1..1 (0 when all are 0). Use negative "
+                          "weights for classes that pull the other way, e.g. smile × 1, sad × -1, or "
+                          "wide × 0.2, open × 0.8, squeeze × -1.",
+                          "결합값 = 클래스 × 가중치의 합, -1~1로 제한 (모두 0이면 0). 반대 방향 클래스는 음수 가중치를 쓰세요. "
+                          "예: 웃음 × 1, 슬픔 × -1 또는 넓힘 × 0.2, 뜸 × 0.8, 찡그림 × -1."),
+    "merged_neutral": ("neutral", "중간값"),
+    "merged_preview2": ("%s\ncombined -1 → %g,  0 (all classes 0) → %g,  +1 → %g",
+                        "%s\n결합값 -1 → %g,  0 (모든 클래스 0) → %g,  +1 → %g"),
+    "merged_bad_number": ("Weights, min, neutral and max must be numbers.", "가중치, min, 중간값, max는 숫자여야 합니다."),
+    "merged_help": ("Combine two or more trained classes into one custom avatar parameter, sent to VRChat over OSC: "
+                    "combined = sum of class × weight (e.g. smile × 1 + sad × -1), mapped to the range you pick "
+                    "with your own neutral value, as a float and/or binary bools. Add parameters with the same "
+                    "name to your avatar (e.g. PBG_SmileSad). Names VRCFaceTracking uses are refused.",
+                    "학습된 두 개 이상의 클래스를 하나의 아바타 파라미터로 합쳐 OSC로 VRChat에 보냅니다: "
+                    "결합값 = 클래스 × 가중치의 합 (예: 웃음 × 1 + 슬픔 × -1)을 고른 범위와 직접 정한 중간값으로 변환해 "
+                    "float 및/또는 바이너리로 보냅니다. 아바타에 같은 이름의 파라미터를 추가하세요 (예: PBG_SmileSad). "
+                    "VRCFaceTracking이 쓰는 이름은 사용할 수 없습니다."),
+    "merged_dialog": ("Merged parameter", "병합 파라미터"),
+    "merged_range": ("Range", "범위"),
+    "merged_value": ("Value", "현재 값"),
+    "merged_enabled": ("Enabled", "사용"),
+    "merged_off": ("off", "꺼짐"),
+    "range_m1_1": ("-1 ~ 1 (neutral 0)", "-1 ~ 1 (중앙 0)"),
+    "range_0_1": ("0 ~ 1 (neutral 0.5)", "0 ~ 1 (중앙 0.5)"),
+    "range_0_2": ("0 ~ 2 (neutral 1)", "0 ~ 2 (중앙 1)"),
+    "range_custom": ("custom", "직접 입력"),
+    "merged_sync_warning": ("VRChat syncs float parameters in -1..1; values outside only work locally "
+                            "(unsynced parameter). Otherwise use -1..1 and rescale in the animator.",
+                            "VRChat은 float 파라미터를 -1~1 범위로 동기화합니다. 이 범위를 벗어나는 값은 로컬(동기화 안 함) "
+                            "파라미터에서만 그대로 쓰입니다. 동기화가 필요하면 -1~1로 받고 애니메이터에서 변환하세요."),
+    "merged_duplicate": ("A merged parameter named '%s' already exists.", "'%s' 이름의 병합 파라미터가 이미 있습니다."),
+    "osc_enabled": ("Send merged parameters to VRChat", "병합 파라미터를 VRChat으로 전송"),
+    "osc_target": ("VRChat OSC address", "VRChat OSC 주소"),
+    "wrap_sranipal": ("Run the SRanipal module inside Pal Buddy Guy (needed with VRCFT v6)",
+                      "SRanipal 모듈을 Pal Buddy Guy 안에서 실행 (VRCFT v6에서 필요)"),
+    "max_mode": ("Keep SRanipal's value when it is larger (instead of replacing it)",
+                 "SRanipal 값이 더 크면 그 값을 유지 (대체하지 않음)"),
+    "install": ("Install / update", "설치 / 업데이트"),
+    "uninstall": ("Remove", "제거"),
+    "mod_installed": ("Module installed (v%s).", "모듈 설치됨 (v%s)."),
+    "mod_update": ("Update available: v%s", "업데이트 가능: v%s"),
+    "mod_not_installed": ("Module not installed.", "모듈이 설치되지 않았습니다."),
+    "sran_found": ("SRanipal module '%s' found (still standalone: install to wrap it).",
+                   "SRanipal 모듈 '%s' 발견 (아직 단독 실행 중: 설치하면 감싸서 실행)."),
+    "sran_wrapped": ("SRanipal module '%s' runs inside Pal Buddy Guy.", "SRanipal 모듈 '%s'이(가) Pal Buddy Guy 안에서 실행됩니다."),
+    "sran_missing": ("SRanipal module not found: install it in VRCFaceTracking first.",
+                     "SRanipal 모듈이 없습니다: 먼저 VRCFaceTracking에서 설치하세요."),
+    "vrcft_missing": ("VRCFaceTracking data folder not found (%s).", "VRCFaceTracking 데이터 폴더를 찾을 수 없습니다 (%s)."),
+    "proto_old": ("old module", "구 모듈"),
+    "proto_v6": ("v6 module", "v6 모듈"),
+    "priority": ("Process priority", "프로세스 우선순위"),
+    "prio_above_normal": ("above normal", "보통 이상"),
+    "prio_normal": ("normal", "보통"),
+    "prio_below_normal": ("below normal (recommended: yields to VR)", "보통 이하 (권장: VR에 양보)"),
+    "prio_idle": ("low (may lag when the CPU is busy)", "낮음 (CPU가 바쁘면 끊길 수 있음)"),
+    "ecores": ("Efficiency cores only (hybrid Intel CPUs)", "E코어만 사용 (하이브리드 Intel CPU)"),
+    "eco_mode": ("Efficiency mode (Windows 11 EcoQoS)", "효율 모드 (Windows 11 EcoQoS)"),
+    "benchmark": ("Benchmark this PC", "이 PC에서 비교 측정"),
+    "bench_running": ("Measuring… (tracking is paused)", "측정 중… (트래킹 일시 정지)"),
+    "bench_note": ("Lower CPU % and ms are better. Measuring the GPU reserves some VRAM until restart.",
+                   "CPU %와 ms는 낮을수록 좋습니다. GPU를 측정하면 재시작 전까지 VRAM 일부가 점유됩니다."),
+    "bench_line": ("%-18s %6.2f ms  CPU %3.0f%%", "%-18s %6.2f ms  CPU %3.0f%%"),
+    "not_tracking": ("Not tracking", "트래킹 중 아님"),
+    "idle_note": ("idle 10 Hz: nothing receives the output yet", "대기 10Hz: 아직 출력을 받는 곳이 없음"),
+    "preparing": ("Preparing model…", "모델 준비 중…"),
+    "rec_name": ("Recording name", "녹화 이름"),
+    "rec_frames": ("Frames", "프레임 수"),
+    "rec_countdown": ("Countdown (s)", "카운트다운 (초)"),
+    "record": ("Record", "녹화"),
+    "cancel": ("Cancel", "취소"),
+    "rec_help": ("Hold the target expression for ~30 s while moving your head/headset a little. "
+                 "Always record a 'neutral' set too.",
+                 "목표 표정을 약 30초간 유지하면서 머리/헤드셋을 조금씩 움직이세요. "
+                 "'neutral'(무표정) 녹화도 반드시 필요합니다."),
+    "recordings": ("Recordings in dataset folder", "데이터셋 폴더의 녹화 파일"),
+    "refresh": ("Refresh", "새로고침"),
+    "convert_pkl": ("Convert old .pkl", "구 .pkl 변환"),
+    "add_to_class": ("Add to class…", "클래스에 추가…"),
+    "delete": ("Delete", "삭제"),
+    "classes": ("Expression classes (the first one must be neutral)", "표정 클래스 (첫 번째는 neutral이어야 함)"),
+    "col_name": ("Name", "이름"),
+    "col_target": ("Drives shape", "대상 파라미터"),
+    "col_power": ("Max power", "최대값"),
+    "col_files": ("Recordings", "녹화 파일"),
+    "add": ("Add", "추가"),
+    "edit": ("Edit", "편집"),
+    "remove": ("Remove", "제거"),
+    "up": ("Up", "위로"),
+    "down": ("Down", "아래로"),
+    "epochs": ("Epochs", "에폭"),
+    "batch": ("Batch size", "배치 크기"),
+    "lr": ("Learning rate", "학습률"),
+    "weight_decay": ("Weight decay", "가중치 감쇠"),
+    "overfitting": ("Against overfitting:", "과적합 대책:"),
+    "augment": ("Augment (position / lighting)", "증강 (위치·조명 변화)"),
+    "aug_short": ("augmented", "증강"),
+    "distill": ("Distill", "증류 (standard 선생)"),
+    "distill_short": ("distilled", "증류"),
+    "compare_with_distill": ("Also train a distilled compact + BCE model (learns from the standard + BCE run)",
+                             "증류한 compact + BCE 모델도 학습 (standard + BCE 결과를 선생으로 사용)"),
+    "compare_with_aug": ("Also train each picked model with augmentation (twice as many runs)",
+                         "선택한 모델마다 증강 버전도 학습 (실행 횟수 2배)"),
+    "amp": ("Mixed precision (faster on NVIDIA)", "혼합 정밀도 (NVIDIA에서 더 빠름)"),
+    "cache": ("Cache recordings in RAM", "녹화 파일을 RAM에 캐시"),
+    "resume": ("Continue from current model", "현재 모델에서 이어서 학습"),
+    "arch": ("Model", "모델 구조"),
+    "arch_standard": ("standard (original)", "표준 (원본)"),
+    "arch_lite": ("lite (~5x faster)", "경량 (약 5배 빠름)"),
+    "arch_compact": ("compact (~10x faster, small data)", "컴팩트 (약 10배 빠름, 적은 데이터용)"),
+    "loss_fn": ("Training method", "학습 방식"),
+    "loss_mse": ("MSE (original)", "MSE (원본)"),
+    "loss_bce": ("BCE (independent expressions)", "BCE (표정별 독립 학습)"),
+    "compare": ("Compare models & pick…", "모델 비교 후 선택…"),
+    "compare_title": ("Compare models", "모델 비교"),
+    "compare_help": ("Trains each selected model on the same recordings, measures it on the held-out end of every "
+                     "recording and times it on this PC. The recommended one is marked ★; select any row and "
+                     "press Apply to track with it right away (it is saved to the model file, the previous file "
+                     "is kept as .prev.pt).",
+                     "선택한 모델들을 같은 녹화로 각각 학습한 뒤, 각 녹화의 끝부분(학습에 안 쓴 구간)으로 채점하고 "
+                     "이 PC에서 속도를 잽니다. 추천 모델에는 ★가 붙습니다. 원하는 줄을 고르고 적용을 누르면 바로 "
+                     "그 모델로 트래킹합니다 (모델 파일에 저장되고, 이전 파일은 .prev.pt로 남습니다)."),
+    "compare_pick": ("Models to compare", "비교할 모델"),
+    "compare_epochs": ("Each model trains for %d epochs (Train tab setting).",
+                       "각 모델은 %d 에폭씩 학습합니다 (학습 탭 설정)."),
+    "compare_start": ("Start comparison", "비교 시작"),
+    "compare_running": ("Comparing…", "비교 중…"),
+    "compare_progress": ("Model %d/%d · epoch %d/%d", "모델 %d/%d · 에폭 %d/%d"),
+    "compare_results": ("Results", "결과"),
+    "cmp_loss": ("Method", "학습 방식"),
+    "cmp_score": ("Score", "점수"),
+    "cmp_acc": ("Accuracy", "정확도"),
+    "cmp_hit": ("Recognised", "인식률"),
+    "cmp_false": ("False act.", "오작동률"),
+    "cmp_ms": ("ms/frame", "ms/프레임"),
+    "cmp_size": ("MB", "MB"),
+    "compare_legend": ("Accuracy: the shown expression has the highest output. Recognised: its output is above 0.5. "
+                       "False act.: another expression's output is above 0.3 (a wrong shape moves) - lower is "
+                       "better. Int. error: how far the output is from the target intensity (guided recordings), "
+                       "lower is better. Score = (accuracy + recognised + 2 × (100% - false act.) + "
+                       "(1 - int. error)) / 5. Models within "
+                       "0.5 points of the best count as equal and the fastest of them is recommended.",
+                       "정확도: 보여준 표정의 출력이 가장 높은 비율. 인식률: 그 표정의 출력이 0.5를 넘은 비율. "
+                       "오작동률: 다른 표정의 출력이 0.3을 넘은 비율 (엉뚱한 표정이 움직임, 낮을수록 좋음). "
+                       "강도 오차: 목표 강도와 출력의 차이 (가이드 녹화, 낮을수록 좋음). "
+                       "점수 = (정확도 + 인식률 + 2 × (100% - 오작동률) + (1 - 강도 오차)) / 5. 최고점과 0.5점 이내면 같은 "
+                       "수준으로 보고 그중 가장 빠른 모델을 추천합니다."),
+    "compare_verdict": ("Recommended: %s + %s (score %.1f, %.2f ms per frame).",
+                        "추천: %s + %s (점수 %.1f, 프레임당 %.2f ms)."),
+    "compare_current": ("(current)", "(현재)"),
+    "compare_apply": ("Apply selected model", "선택한 모델 적용"),
+    "compare_applied": ("Now using %s + %s (saved).", "이제 %s + %s 모델을 사용합니다 (저장됨)."),
+    "close": ("Close", "닫기"),
+    "val_stats": ("validation accuracy %.1f%% (loss %.5f)", "검증 정확도 %.1f%% (손실 %.5f)"),
+    "train": ("Train", "학습 시작"),
+    "stop": ("Stop", "중지"),
+    "save_model": ("Save model", "모델 저장"),
+    "load_model": ("Load model", "모델 불러오기"),
+    "loss": ("Loss (lower is better, aim < 0.001)", "손실 (낮을수록 좋음, 0.001 미만 목표)"),
+    "dataset_folder": ("Dataset folder", "데이터셋 폴더"),
+    "model_path": ("Model file", "모델 파일"),
+    "source": ("Input source", "입력 방식"),
+    "source_direct": ("direct (built-in, recommended)", "direct (내장, 권장)"),
+    "source_proxy": ("proxy (separate tvm_proxy.py)", "proxy (별도 tvm_proxy.py)"),
+    "bind_host": ("Listen address", "수신 주소"),
+    "face_port": ("SRanipal port A", "SRanipal 포트 A"),
+    "eye_port": ("SRanipal port B", "SRanipal 포트 B"),
+    "proxy_port": ("Proxy port", "프록시 포트"),
+    "vrcft_port": ("VRCFT port", "VRCFT 포트"),
+    "max_rate": ("Max send rate (Hz)", "최대 전송 빈도 (Hz)"),
+    "language": ("Language", "언어"),
+    "browse": ("Browse…", "찾아보기…"),
+    "save": ("Save", "저장"),
+    "saved_restart": ("Saved. Network changes apply after restarting the app.",
+                      "저장했습니다. 네트워크 설정은 앱을 다시 시작하면 적용됩니다."),
+    "unsaved_quit": ("The trained model is not saved. Quit anyway?", "학습된 모델이 저장되지 않았습니다. 그래도 종료할까요?"),
+    "none": ("(none)", "(없음)"),
+    "class_dialog": ("Expression class", "표정 클래스"),
+    "files_hint": ("Select the recordings of this expression", "이 표정의 녹화 파일을 선택하세요"),
+    "error": ("Error", "오류"),
+    "confirm_delete": ("Delete %s?", "%s 파일을 삭제할까요?"),
+    "pick_class": ("Add to which class?", "어느 클래스에 추가할까요?"),
+    "input_mode": ("Input", "입력 방식"),
+    "mode_both": ("Eye + face trackers", "눈 + 입 (두 트래커)"),
+    "mode_face": ("Face tracker only", "입만 (페이셜 트래커)"),
+    "mode_eye": ("Eye tracker only", "눈만 (Pro Eye)"),
+    "not_used": ("not used", "사용 안 함"),
+    "hint_both": ("Both trackers are streaming. Use both?", "두 트래커가 모두 연결되어 있습니다. 둘 다 사용할까요?"),
+    "hint_single": ("Only one tracker is streaming. Check the preview and pick which one it is:",
+                    "트래커가 하나만 연결되어 있습니다. 미리보기를 보고 어느 쪽인지 고르세요:"),
+    "use_both": ("Use both", "둘 다 사용"),
+    "use_face": ("Face only", "입만"),
+    "use_eye": ("Eye only", "눈만"),
+    "mode_retrain": ("A model only works with the input mode it was trained for. After switching, "
+                     "train again (existing eye+face recordings can be reused).",
+                     "모델은 학습할 때의 입력 방식에서만 동작합니다. 바꾼 뒤에는 다시 학습하세요 "
+                     "(눈+입으로 녹화한 파일은 그대로 재사용할 수 있습니다)."),
+    "fastcal_help": ("FastCal puppets each shape on your avatar; copy it with your face.",
+                     "FastCal은 아바타에 각 표정을 차례로 보여줍니다. 얼굴로 따라 하세요."),
+}
+
+
+class Translator:
+    def __init__(self, lang="en"):
+        self.lang = lang
+
+    def __call__(self, key):
+        pair = STRINGS.get(key)
+        if pair is None:
+            return key
+        return pair[1] if self.lang == "ko" else pair[0]

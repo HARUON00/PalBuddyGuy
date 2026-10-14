@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Stand-in for the SRanipal module in integration tests: fixed eye and lip values. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(VRCFTSource)\VRCFaceTracking.SDK\VRCFaceTracking.SDK.csproj" Private="false" ExcludeAssets="runtime" />
+    <ProjectReference Include="$(VRCFTSource)\VRCFaceTracking.Core\VRCFaceTracking.Core.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+</Project>

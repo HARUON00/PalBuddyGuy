@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    VRCFaceTracking v6 module for Pal Buddy Guy.
+
+    Build against a VRCFaceTracking source checkout:
+      dotnet build -c Release -p:VRCFTSource=C:\src\VRCFaceTracking
+    or against an installed VRCFaceTracking (folder containing VRCFaceTracking.Core.dll):
+      dotnet build -c Release -p:VRCFTInstallDir="C:\Program Files\VRCFaceTracking"
+
+    The VRCFaceTracking assemblies are provided by VRCFT at runtime and are not copied.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>PalBuddyGuy.VRCFT</AssemblyName>
+    <RootNamespace>PalBuddyGuy.VRCFT</RootNamespace>
+    <Version>2.0.0</Version>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(VRCFTSource)' != ''">
+    <ProjectReference Include="$(VRCFTSource)\VRCFaceTracking.SDK\VRCFaceTracking.SDK.csproj" Private="false" ExcludeAssets="runtime" />
+    <ProjectReference Include="$(VRCFTSource)\VRCFaceTracking.Core\VRCFaceTracking.Core.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(VRCFTSource)' == ''">
+    <Reference Include="VRCFaceTracking.SDK">
+      <HintPath>$(VRCFTInstallDir)\VRCFaceTracking.SDK.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="VRCFaceTracking.Core">
+      <HintPath>$(VRCFTInstallDir)\VRCFaceTracking.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="tests/**" />
+    <None Include="module.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

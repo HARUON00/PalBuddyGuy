@@ -1,0 +1,11 @@
+{
+  "ModuleId": "01db7fc9-61b0-4799-887e-b49b3beb043d",
+  "LastUpdated": "2026-09-29T00:00:00Z",
+  "Version": "2.0.0",
+  "IsLocal": true,
+  "AuthorName": "Pal Buddy Guy",
+  "ModuleName": "PalBuddyGuy",
+  "ModuleDescription": "Custom expressions trained with Pal Buddy Guy on top of SRanipal (Vive Pro Eye / Vive Facial Tracker).",
+  "UsageInstructions": "Install from the Pal Buddy Guy app (Settings > VRCFaceTracking module). It wraps the SRanipal module, so that one gets disabled while this module is installed.",
+  "DllFileName": "PalBuddyGuy.VRCFT.dll"
+}

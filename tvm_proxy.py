@@ -1,182 +1,89 @@
-import socket
+"""Optional standalone proxy (legacy two-process mode).
+
+Not needed any more: `python -m palbuddy` receives the SRanipal streams itself
+(source "direct" in config.json), which saves a TCP hop and a process.
+
+Use this only if you want the receiver in a separate process, e.g. to keep it
+running while restarting the trainer. Then set "source": "proxy" in
+config.json. Commands: swap, image, status, exit.
+"""
+
+import logging
 import sys
-import os
-import time
-import numpy as np
-import cv2
 import threading
+import time
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.bind(("", 18452))
-s.listen(1)
+from palbuddy.config import DEFAULT_CONFIG_PATH, Config
+from palbuddy.frames import FrameHub, ProxyServer, SRanipalReceiver, decode_camera
 
-s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s2.bind(("", 18453))
-s2.listen(1)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+log = logging.getLogger("tvm_proxy")
 
-host = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-host.bind(("", 18454))
-host.listen(1)
 
-lt = time.time()
+def main():
+    config_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CONFIG_PATH
+    cfg = Config.load(config_path)
+    hub = FrameHub()
+    receiver = SRanipalReceiver(hub, cfg.bind_host, cfg.face_port, cfg.eye_port, swapped=cfg.swapped,
+                                mode=cfg.input_mode, stall_timeout=cfg.stall_timeout).start()
+    server = ProxyServer(hub, cfg.bind_host, cfg.proxy_port).start()
+    log.info("Serving samples on %s:%d", cfg.bind_host, cfg.proxy_port)
 
-backbuffer = np.zeros((200, 200, 3), dtype=np.uint8)
-buffer = np.zeros((200, 200, 3), dtype=np.uint8)
-cv2.imshow("test", cv2.resize(buffer, (800, 800)))
-cv2.waitKey(1)
+    state = {"image": True, "quit": False}
 
-highest_tid = 0
-
-highest_hwid = 0
-connection_count = 0
-
-enable_image_display = True
-
-neural_queue = []
-
-last_eye = None
-swapped = False
-
-target_stream = None # stream to write parameters to
-target_stream_is_valid = False # if the stream is currently valid
-
-def decode_image(data, flipped=False):
-    data = np.frombuffer(data, dtype=np.float32)
-    data = np.clip(np.reshape(data, (1, 2, 100, 100)) * 255, 0, 255)[0]
-    
-    new_image = np.zeros((100, 200), dtype=np.float32)
-    
-    if flipped:
-        new_image[:, :100] = np.flip(data[1], 1)
-        new_image[:, 100:] = np.flip(data[0], 1)
-    else:
-        new_image[:, :100] = data[0]
-        new_image[:, 100:] = data[1]
-    
-    new_image = np.stack((new_image, new_image, new_image), axis=-1).astype(np.uint8)
-    return new_image
-
-def decode_neural(data):
-    data = np.frombuffer(data, dtype=np.float32)
-    data = np.reshape(data, (1, 64, 20, 20))[0]
-    return data
-
-def reader_thread(s, id):
-    global highest_tid
-    global highest_hwid
-    global connection_count
-    global lt
-    global backbuffer
-    global last_eye
-    while True:
-        try:
-            c, addr = s.accept()
-            print("Received connection")
-            connection_count = connection_count + 1
+    def input_thread():
+        while not state["quit"]:
             try:
+                cmd = input("command (swap, image, status, exit): ").strip()
+            except EOFError:
+                cmd = "exit"
+            if cmd == "swap":
+                receiver.set_swapped(not receiver.swapped)
+                cfg.swapped = receiver.swapped
+                cfg.save(config_path)
+                print("swapped = %s" % receiver.swapped)
+            elif cmd == "image":
+                state["image"] = not state["image"]
+            elif cmd == "status":
+                for role, st in receiver.snapshot(cfg.stall_timeout).items():
+                    print("  %-5s %-12s %5.1f fps" % (role, st["state"], st["fps"]))
+                print("  clients: %d" % server.clients)
+            elif cmd == "exit":
+                state["quit"] = True
 
-                rid = 0
-                while True:
-                    def read(length):
-                        v = c.recv(length)
-                        while len(v) < length:
-                            v = v + c.recv(length - len(v))
-                        return v
-                    
-                    def read_int():
-                        v = read(4)
-                        return int.from_bytes(v, "little")
+    threading.Thread(target=input_thread, daemon=True).start()
 
-                    device = read_int() # broken
-                    length = read_int()
-                    thread_id = read_int()
-                    
-                    if id == 1 and length == 80000:
-                        highest_hwid = (highest_hwid * 0.99) + (device * 0.01) # broken as fuck
-                    
-                    if thread_id > highest_tid:
-                        highest_tid = thread_id
-                    
-                    if not (102400 == length or 80000 == length):
-                        print("Invalid packet!")
-                        try:
-                            c.close()
-                        except:
-                            traceback.print_exc()
-                        break
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        cv2 = None
 
-                    data = read(length)
-                    
-                    if length == 80000: # camera frame
-                        if enable_image_display:
-                            if (id == 0 and (not swapped)) or (id == 1 and swapped):
-                                buffer[100:200, :, :] = decode_image(data, flipped=True)
-                                backbuffer = buffer.copy()
-                            else:
-                                buffer[:100, :, :] = decode_image(data)
-                    else:
-                        if (id == 0 and (not swapped)) or (id == 1 and swapped):
-                            if last_eye is not None:
-                                neural_queue.append((last_eye, data))
-                                if len(neural_queue) > 60 * 4:
-                                    neural_queue.pop(0)#del neural_queue[:len(neural_queue)-(60 * 4)]
-                        else:
-                            last_eye = data
-
-                    rid = rid + 1
-            except:
-                import traceback
-                traceback.print_exc()
-                try:
-                    c.close()
-                except:
-                    traceback.print_exc()
-                time.sleep(0.1)
-        except:
-            import traceback
-            traceback.print_exc()
-        connection_count = connection_count - 1
-
-def server_thread():
-    while True:
+    shown = False
+    while not state["quit"]:
+        if cv2 is None or not state["image"]:
+            if shown:
+                cv2.destroyAllWindows()
+                shown = False
+            time.sleep(0.1)
+            continue
+        hub.want_cameras()
+        img = np.zeros((200, 200), dtype=np.uint8)
+        if hub.cameras["eye"] is not None:
+            img[:100] = decode_camera(hub.cameras["eye"])
+        if hub.cameras["face"] is not None:
+            img[100:] = decode_camera(hub.cameras["face"], flipped=True)
         try:
-            c, addr = host.accept()
-            print("Received client connection")
-            while True:
-                while len(neural_queue) > 0:
-                    a, b = neural_queue.pop(0)
-                    c.sendall(a)
-                    c.sendall(b)
-                    
-                while len(neural_queue) == 0:
-                    time.sleep(0.001)
-        except:
-            import traceback
-            traceback.print_exc()
-            time.sleep(0.01)
-            
-def input_thread():
-    global swapped
-    while True:
-        print("Please enter command (only commands are swap, image and exit)")
-        cmd = input()
-        if cmd == "swap":
-            print("Swapped buffers!")
-            swapped = not swapped
-            neural_queue.clear()
-        elif cmd == "exit":
-            quit()
-        elif cmd == "image":
-            enable_image_display = not enable_image_display
+            cv2.imshow("PalBuddyGuy proxy", cv2.resize(img, (600, 600), interpolation=cv2.INTER_NEAREST))
+            cv2.waitKey(33)
+            shown = True
+        except cv2.error as e:  # e.g. opencv-python-headless or no display
+            log.warning("Camera window unavailable (%s); continuing without it", e)
+            state["image"] = False
 
-threading.Thread(target=reader_thread, args=(s, 0)).start()
-threading.Thread(target=reader_thread, args=(s2, 1)).start()
-threading.Thread(target=server_thread, args=()).start()
-threading.Thread(target=input_thread, args=()).start()
+    receiver.stop()
+    server.stop()
 
-while True:
-    lt = time.time()
-    cv2.imshow("test", cv2.resize(backbuffer, (800, 800)))
-    cv2.waitKey(16)
-    while not enable_image_display:
-        time.sleep(0.1)
+
+if __name__ == "__main__":
+    main()

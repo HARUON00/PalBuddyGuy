@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+config.json
+*.pt
+*.pt.tmp
+datasets/
+*.mmap
+*.mmap.part
+*.pkl
+.venv/
+palbuddy.log
